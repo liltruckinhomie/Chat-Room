@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Homie Chat – Video & Chat</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -88,6 +88,8 @@
             width: 7px; height: 7px; border-radius: 50%;
             background: #4ade80; animation: pulse 1.5s infinite;
         }
+
+        .ban-box {
             background:rgba(255,0,0,0.08); border:1px solid rgba(255,0,0,0.25);
             border-radius:8px; padding:10px 12px; margin:8px 0;
             text-align:center; font-size:13px;
@@ -97,9 +99,9 @@
 
         /* ===== APP ===== */
         #app {
-            display:none; width:100%; height:100vh;
+            display:none; width:100%; height:100%;
             flex-direction:column; background:#1a1a2e;
-            position:fixed; top:0; left:0;
+            position:fixed; top:0; left:0; right:0; bottom:0;
         }
         .topbar {
             background:#16213e; color:white;
@@ -248,8 +250,10 @@
         .person img { width:34px; height:34px; border-radius:50%; object-fit:cover; }
         .person-name { flex:1; font-size:13px; color:#ddd; }
 
+        /* ===== CONTROLS — safe area fix for phone home bar ===== */
         .controls {
-            padding:10px 20px;
+            padding: 10px 20px;
+            padding-bottom: max(10px, env(safe-area-inset-bottom));
             background:#16213e;
             display:flex;
             justify-content:center;
@@ -258,6 +262,8 @@
             border-top:1px solid #2c3e66;
             flex-shrink:0;
             flex-wrap: wrap;
+            position: relative;
+            z-index: 10;
         }
         .toggle-group {
             display:flex; flex-direction:column;
@@ -313,7 +319,12 @@
                 display:flex; flex-direction:column;
                 align-items:center; gap:4px;
             }
-            .controls { padding:8px 12px 10px; gap:10px; }
+            .controls {
+                padding: 8px 12px;
+                /* Key fix: env(safe-area-inset-bottom) pushes above home bar */
+                padding-bottom: max(14px, env(safe-area-inset-bottom));
+                gap:10px;
+            }
             .toggle-pill { width:72px; height:34px; font-size:11px; }
             .end-btn { width:46px; height:46px; font-size:18px; }
             .mobile-drawer-overlay {
@@ -335,6 +346,7 @@
                 z-index:201;
                 transform:translateY(100%);
                 transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);
+                padding-bottom: env(safe-area-inset-bottom);
             }
             .mobile-drawer.open { transform:translateY(0); }
             .drawer-handle {
@@ -383,7 +395,6 @@
                     <div class="welcome-text">Welcome, <span class="welcome-name" id="displayName"></span>!</div>
                 </div>
             </div>
-            <!-- FIX 3: Changed button text from "Join Video Chat" to "Join Call" -->
             <div class="join-online-pill" id="joinOnlinePill" style="display:none">
                 <span class="join-online-dot"></span>
                 <span id="joinOnlineCount">0</span> in call
@@ -488,9 +499,6 @@
 <div id="toast" class="toast"></div>
 
 <script>
-// ─────────────────────────────────────────────
-// FIREBASE
-// ─────────────────────────────────────────────
 const firebaseConfig = {
     apiKey:"AIzaSyBhxDQuGKB5dOytjQeTxQvFwDpaEQyLJyo",
     authDomain:"homie-centre-2.firebaseapp.com",
@@ -503,22 +511,13 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
-// ─────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────
 const HOST_ID  = 'homie-video-room-1';
 const PEER_CFG = { host:'0.peerjs.com', port:443, secure:true, path:'/' };
 const HEARTBEAT_INTERVAL = 4000;
 const HEARTBEAT_TIMEOUT  = 12000;
-
-// FIX 2: Longer, randomised host-takeover delay so two rejoining guests
-// don't both grab HOST_ID at the same moment and split into two rooms.
-// Each guest waits a different amount before attempting takeover.
 const TAKEOVER_DELAY_MIN = 2500;
 const TAKEOVER_DELAY_MAX = 5000;
-function randomTakeoverDelay(){
-    return TAKEOVER_DELAY_MIN + Math.random() * (TAKEOVER_DELAY_MAX - TAKEOVER_DELAY_MIN);
-}
+function randomTakeoverDelay(){ return TAKEOVER_DELAY_MIN + Math.random()*(TAKEOVER_DELAY_MAX-TAKEOVER_DELAY_MIN); }
 
 const PICS = {
     0:"https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png",
@@ -543,51 +542,20 @@ const PICS = {
     19:"https://static.wixstatic.com/media/4145c3_1bb59962372746c1806696ee00f65787~mv2.png"
 };
 
-// ─────────────────────────────────────────────
-// APP STATE
-// ─────────────────────────────────────────────
-let currentUser = null, myName = '', myPicUrl = PICS[0], myUid = '';
-let lastBannedUser = null, unsubBan = null;
+let currentUser=null,myName='',myPicUrl=PICS[0],myUid='';
+let lastBannedUser=null,unsubBan=null;
+let localStream=null,peer=null,isHost=false,myPeerId='';
+let micOn=true,camOn=false,hasVideoPermission=false;
+let participants={},connections={},hostConn=null,hostLastPing=0;
+let heartbeatSendTimer=null,heartbeatCheckTimer=null,takeoverTimer=null;
 
-let localStream = null;
-let peer        = null;
-let isHost      = false;
-let myPeerId    = '';
-let micOn       = true;
-let camOn       = false;
-let hasVideoPermission = false;
-
-let participants = {};
-let connections  = {};
-let hostConn = null;
-let hostLastPing = 0;
-
-let heartbeatSendTimer = null;
-let heartbeatCheckTimer = null;
-
-// FIX 2: Track pending takeover attempt so we can cancel it if we
-// successfully connect to a host before the delay fires.
-let takeoverTimer = null;
-
-// ─────────────────────────────────────────────
-// UTILS
-// ─────────────────────────────────────────────
 function qs(id){ return document.getElementById(id); }
-function toast(msg){
-    const t=qs('toast'); t.textContent=msg; t.classList.add('show');
-    setTimeout(()=>t.classList.remove('show'),2600);
-}
+function toast(msg){ const t=qs('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function emailOf(u){ return u+'@homiecentre.com'; }
 function hhmm(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
 function safePic(p){ return PICS[Math.max(0,Math.min(19,parseInt(p)||0))]||PICS[0]; }
-function streamHasActiveVideo(s){
-    return s && s.getVideoTracks().some(t=>t.enabled && t.readyState==='live');
-}
 
-// ─────────────────────────────────────────────
-// BAN HELPERS
-// ─────────────────────────────────────────────
 function parseBan(f){
     if(!f) return null;
     try{
@@ -595,10 +563,7 @@ function parseBan(f){
         const p=f.split('/');
         if(p.length===5){
             const fy=parseInt(p[4])<100?2000+parseInt(p[4]):parseInt(p[4]);
-            return{reason:p[0],time:p[1],
-                until:new Date(fy,parseInt(p[3])-1,parseInt(p[2]),
-                               parseInt(p[1].substring(0,2)),parseInt(p[1].substring(2,4))),
-                forever:false};
+            return{reason:p[0],time:p[1],until:new Date(fy,parseInt(p[3])-1,parseInt(p[2]),parseInt(p[1].substring(0,2)),parseInt(p[1].substring(2,4))),forever:false};
         }
         if(p.length===4){
             const fy=parseInt(p[3])<100?2000+parseInt(p[3]):parseInt(p[3]);
@@ -617,7 +582,7 @@ function showBanUI(username,b){
         const ts=b.time?` ${b.time.substring(0,2)}:${b.time.substring(2,4)}`:'';
         qs('banUntilLine').textContent='Until: '+ds+ts;
         qs('banUntilLine').classList.remove('hidden');
-    }else{qs('banUntilLine').classList.add('hidden');}
+    }else{ qs('banUntilLine').classList.add('hidden'); }
     qs('banBox').classList.remove('hidden');
     lastBannedUser=username;
     qs('signupPanel').classList.add('hidden');
@@ -631,11 +596,8 @@ async function checkAndHandleBan(uid,username){
     const doc=await db.collection('users').doc(uid).get();
     if(!doc.exists) return false;
     const d=doc.data();
-    if(d.banned&&isBanExpired(d.banned)){
-        await db.collection('users').doc(uid).update({banned:firebase.firestore.FieldValue.delete()});
-        hideBanUI(); return false;
-    }
-    if(d.banned&&isBanned(d.banned)){showBanUI(username,parseBan(d.banned));await auth.signOut();return true;}
+    if(d.banned&&isBanExpired(d.banned)){ await db.collection('users').doc(uid).update({banned:firebase.firestore.FieldValue.delete()}); hideBanUI(); return false; }
+    if(d.banned&&isBanned(d.banned)){ showBanUI(username,parseBan(d.banned)); await auth.signOut(); return true; }
     hideBanUI(); return false;
 }
 function startBanListener(uid,username){
@@ -643,18 +605,12 @@ function startBanListener(uid,username){
     unsubBan=db.collection('users').doc(uid).onSnapshot(async doc=>{
         if(!doc.exists) return;
         const d=doc.data();
-        if(d.banned&&isBanExpired(d.banned)){
-            await db.collection('users').doc(uid).update({banned:firebase.firestore.FieldValue.delete()});
-            hideBanUI(); return;
-        }
-        if(d.banned&&isBanned(d.banned)){showBanUI(username,parseBan(d.banned));await auth.signOut();}
+        if(d.banned&&isBanExpired(d.banned)){ await db.collection('users').doc(uid).update({banned:firebase.firestore.FieldValue.delete()}); hideBanUI(); return; }
+        if(d.banned&&isBanned(d.banned)){ showBanUI(username,parseBan(d.banned)); await auth.signOut(); }
         else hideBanUI();
     });
 }
 
-// ─────────────────────────────────────────────
-// AUTH UI
-// ─────────────────────────────────────────────
 function showLoggedIn(username,picUrl){
     myPicUrl=picUrl;
     qs('displayName').textContent=username;
@@ -680,59 +636,51 @@ function showLoggedOut(){
     if(!lastBannedUser) hideBanUI();
 }
 
-qs('showSignup').onclick=()=>{qs('authMain').style.display='none';qs('signupPanel').classList.remove('hidden');qs('signupErr').textContent='';};
-qs('showLogin').onclick=()=>{qs('authMain').style.display='none';qs('loginPanel').classList.remove('hidden');qs('loginErr').textContent='';};
-qs('backFromSignup').onclick=()=>{qs('signupPanel').classList.add('hidden');qs('authMain').style.display='block';if(lastBannedUser)qs('banBox').classList.remove('hidden');};
-qs('backFromLogin').onclick=()=>{qs('loginPanel').classList.add('hidden');qs('authMain').style.display='block';if(lastBannedUser)qs('banBox').classList.remove('hidden');};
+qs('showSignup').onclick=()=>{ qs('authMain').style.display='none'; qs('signupPanel').classList.remove('hidden'); qs('signupErr').textContent=''; };
+qs('showLogin').onclick=()=>{ qs('authMain').style.display='none'; qs('loginPanel').classList.remove('hidden'); qs('loginErr').textContent=''; };
+qs('backFromSignup').onclick=()=>{ qs('signupPanel').classList.add('hidden'); qs('authMain').style.display='block'; if(lastBannedUser) qs('banBox').classList.remove('hidden'); };
+qs('backFromLogin').onclick=()=>{ qs('loginPanel').classList.add('hidden'); qs('authMain').style.display='block'; if(lastBannedUser) qs('banBox').classList.remove('hidden'); };
 
 qs('doSignup').onclick=async()=>{
-    const u=qs('signupUser').value.trim(), p=qs('signupPass').value;
-    const err=qs('signupErr');
-    if(!/^[a-zA-Z0-9_]{3,20}$/.test(u)){err.textContent='3-20 letters/numbers only';return;}
-    if(p.length<6){err.textContent='Password needs 6+ characters';return;}
+    const u=qs('signupUser').value.trim(),p=qs('signupPass').value,err=qs('signupErr');
+    if(!/^[a-zA-Z0-9_]{3,20}$/.test(u)){ err.textContent='3-20 letters/numbers only'; return; }
+    if(p.length<6){ err.textContent='Password needs 6+ characters'; return; }
     try{
         const c=await auth.createUserWithEmailAndPassword(emailOf(u),p);
-        await db.collection('users').doc(c.user.uid).set({
-            username:u,points:0,picture:0,
-            lastPointUpdate:firebase.firestore.FieldValue.serverTimestamp()
-        });
+        await db.collection('users').doc(c.user.uid).set({username:u,points:0,picture:0,lastPointUpdate:firebase.firestore.FieldValue.serverTimestamp()});
         await auth.signOut();
         qs('signupPanel').classList.add('hidden');
         qs('authMain').style.display='block';
         toast('Account created! Please sign in.');
-    }catch(e){err.textContent=e.message;}
+    }catch(e){ err.textContent=e.message; }
 };
 qs('doLogin').onclick=async()=>{
     const u=qs('loginUser').value.trim(),p=qs('loginPass').value;
-    try{await auth.signInWithEmailAndPassword(emailOf(u),p);}
-    catch(e){qs('loginErr').textContent='Invalid username or password';}
+    try{ await auth.signInWithEmailAndPassword(emailOf(u),p); }
+    catch(e){ qs('loginErr').textContent='Invalid username or password'; }
 };
-qs('signoutBtn').onclick=()=>{if(unsubBan)unsubBan();auth.signOut();};
+qs('signoutBtn').onclick=()=>{ if(unsubBan) unsubBan(); auth.signOut(); };
 
 auth.onAuthStateChanged(async user=>{
     if(user){
         currentUser=user; myUid=user.uid;
         try{
             const doc=await db.collection('users').doc(user.uid).get();
-            if(!doc.exists){await auth.signOut();return;}
-            const d=doc.data();
-            myName=d.username;
+            if(!doc.exists){ await auth.signOut(); return; }
+            const d=doc.data(); myName=d.username;
             const banned=await checkAndHandleBan(user.uid,d.username);
             if(banned) return;
             const picUrl=safePic(d.picture||0);
             showLoggedIn(d.username,picUrl);
             startBanListener(user.uid,d.username);
             startLobbyCountListener();
-        }catch(e){console.error('auth state err',e);}
+        }catch(e){ console.error('auth state err',e); }
     }else{
-        currentUser=null;myUid='';myName='';
+        currentUser=null; myUid=''; myName='';
         showLoggedOut();
     }
 });
 
-// ─────────────────────────────────────────────
-// JOIN
-// ─────────────────────────────────────────────
 qs('joinBtn').onclick=async()=>{
     if(!currentUser) return;
     qs('authWrap').style.display='none';
@@ -740,27 +688,20 @@ qs('joinBtn').onclick=async()=>{
     await initMedia();
 };
 
-// ─────────────────────────────────────────────
-// MEDIA INIT
-// ─────────────────────────────────────────────
 async function initMedia(){
     hasVideoPermission=false;
     try{
         localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:true});
-        hasVideoPermission=true;
-        micOn=true; camOn=false;
+        hasVideoPermission=true; micOn=true; camOn=false;
         localStream.getVideoTracks().forEach(t=>{ t.enabled=false; });
         toast('Mic ON · Camera OFF — click Camera to enable');
     }catch(e){
         try{
             localStream=await navigator.mediaDevices.getUserMedia({audio:true});
-            hasVideoPermission=false;
-            micOn=true; camOn=false;
+            hasVideoPermission=false; micOn=true; camOn=false;
             toast('Audio only (camera unavailable)');
         }catch(e2){
-            localStream=new MediaStream();
-            hasVideoPermission=false;
-            micOn=false; camOn=false;
+            localStream=new MediaStream(); hasVideoPermission=false; micOn=false; camOn=false;
             toast('No media access — check browser permissions');
         }
     }
@@ -768,207 +709,100 @@ async function initMedia(){
     tryBecomeHost();
 }
 
-// ─────────────────────────────────────────────
-// HEARTBEAT
-// ─────────────────────────────────────────────
 function startHeartbeat(){
     stopHeartbeat();
     if(isHost){
         heartbeatSendTimer=setInterval(()=>{
             const now=Date.now();
-            Object.values(connections).forEach(c=>{
-                if(c.conn&&c.conn.open) try{c.conn.send({type:'ping',ts:now});}catch(e){}
-            });
-            Object.entries(connections).forEach(([gid,c])=>{
-                if(c.lastPing && now-c.lastPing > HEARTBEAT_TIMEOUT){
-                    console.warn('Guest timed out:',gid);
-                    removeGuest(gid);
-                }
-            });
+            Object.values(connections).forEach(c=>{ if(c.conn&&c.conn.open) try{ c.conn.send({type:'ping',ts:now}); }catch(e){} });
+            Object.entries(connections).forEach(([gid,c])=>{ if(c.lastPing&&now-c.lastPing>HEARTBEAT_TIMEOUT){ console.warn('Guest timed out:',gid); removeGuest(gid); } });
         }, HEARTBEAT_INTERVAL);
-    } else {
+    }else{
         hostLastPing=Date.now();
         heartbeatCheckTimer=setInterval(()=>{
-            if(Date.now()-hostLastPing > HEARTBEAT_TIMEOUT){
-                console.warn('Host timed out — attempting takeover');
-                stopHeartbeat();
-                // FIX 2: Use randomised delay before takeover attempt so
-                // multiple guests don't all grab HOST_ID simultaneously,
-                // which is what causes the "alone in the room" split.
-                scheduleTakeover();
-            }
+            if(Date.now()-hostLastPing>HEARTBEAT_TIMEOUT){ console.warn('Host timed out'); stopHeartbeat(); scheduleTakeover(); }
         }, HEARTBEAT_INTERVAL);
     }
 }
-
-function stopHeartbeat(){
-    clearInterval(heartbeatSendTimer);
-    clearInterval(heartbeatCheckTimer);
-    heartbeatSendTimer=null;
-    heartbeatCheckTimer=null;
-}
-
-// FIX 2: Separate takeover scheduler with cancellable timer.
-// If a new host connection is established before the delay fires, cancel it.
+function stopHeartbeat(){ clearInterval(heartbeatSendTimer); clearInterval(heartbeatCheckTimer); heartbeatSendTimer=null; heartbeatCheckTimer=null; }
 function scheduleTakeover(){
-    if(takeoverTimer) return; // already scheduled
-    const delay = randomTakeoverDelay();
-    console.log(`Takeover scheduled in ${Math.round(delay)}ms`);
-    takeoverTimer = setTimeout(()=>{
-        takeoverTimer = null;
-        if(qs('app').style.display !== 'none') tryBecomeHost();
-    }, delay);
+    if(takeoverTimer) return;
+    const delay=randomTakeoverDelay();
+    takeoverTimer=setTimeout(()=>{ takeoverTimer=null; if(qs('app').style.display!=='none') tryBecomeHost(); }, delay);
 }
+function cancelTakeover(){ if(takeoverTimer){ clearTimeout(takeoverTimer); takeoverTimer=null; } }
 
-function cancelTakeover(){
-    if(takeoverTimer){ clearTimeout(takeoverTimer); takeoverTimer=null; }
-}
-
-// ─────────────────────────────────────────────
-// HOST
-// ─────────────────────────────────────────────
 function tryBecomeHost(){
-    cancelTakeover();
-    stopHeartbeat();
-    if(peer){try{peer.destroy();}catch(e){}peer=null;}
+    cancelTakeover(); stopHeartbeat();
+    if(peer){ try{ peer.destroy(); }catch(e){} peer=null; }
     peer=new Peer(HOST_ID,PEER_CFG);
     peer.on('open',()=>{
         isHost=true; myPeerId=HOST_ID;
-        participants={};
-        participants[myPeerId]={name:myName,pic:myPicUrl,stream:localStream,muted:!micOn,hasVideo:false};
+        participants={}; participants[myPeerId]={name:myName,pic:myPicUrl,stream:localStream,muted:!micOn,hasVideo:false};
         renderAll();
         peer.on('connection',onGuestConn);
         peer.on('call',onGuestCall);
         startHeartbeat();
     });
-    peer.on('error',err=>{
-        if(err.type==='unavailable-id'){peer.destroy();peer=null;joinAsGuest();}
-        else console.error('host peer err',err);
-    });
+    peer.on('error',err=>{ if(err.type==='unavailable-id'){ peer.destroy(); peer=null; joinAsGuest(); } else console.error('host peer err',err); });
 }
 
-// ─────────────────────────────────────────────
-// GUEST
-// ─────────────────────────────────────────────
 function joinAsGuest(){
-    cancelTakeover();
-    stopHeartbeat();
-    if(peer){try{peer.destroy();}catch(e){}peer=null;}
+    cancelTakeover(); stopHeartbeat();
+    if(peer){ try{ peer.destroy(); }catch(e){} peer=null; }
     const gid='g-'+Date.now()+'-'+Math.random().toString(36).substr(2,5);
     peer=new Peer(gid,PEER_CFG);
-
     peer.on('open',id=>{
         isHost=false; myPeerId=id;
-        participants={};
-        participants[myPeerId]={name:myName,pic:myPicUrl,stream:localStream,muted:!micOn,hasVideo:false};
-        connections={}; hostConn=null;
-        renderAll();
-
+        participants={}; participants[myPeerId]={name:myName,pic:myPicUrl,stream:localStream,muted:!micOn,hasVideo:false};
+        connections={}; hostConn=null; renderAll();
         hostConn=peer.connect(HOST_ID,{metadata:{name:myName,pic:myPicUrl,id:myPeerId}});
-
         hostConn.on('open',()=>{
-            // FIX 2: If we successfully reached the host, cancel any pending takeover.
-            cancelTakeover();
-            startHeartbeat();
+            cancelTakeover(); startHeartbeat();
             const call=peer.call(HOST_ID,localStream,{metadata:{name:myName,pic:myPicUrl,id:myPeerId}});
             call.on('stream',remoteStream=>{
-                ensureAudioPlaying(remoteStream, HOST_ID);
-                // Same as relay: t.enabled is always true on receiver side.
-                // Trust cam-status packets only for remote camera state.
-                const existingHasVideo = participants[HOST_ID]?.hasVideo || false;
-                upsertParticipant(HOST_ID,
-                    participants[HOST_ID]?.name||'Host',
-                    participants[HOST_ID]?.pic||PICS[0],
-                    remoteStream,false,existingHasVideo);
+                ensureAudioPlaying(remoteStream,HOST_ID);
+                const existingHasVideo=participants[HOST_ID]?.hasVideo||false;
+                upsertParticipant(HOST_ID,participants[HOST_ID]?.name||'Host',participants[HOST_ID]?.pic||PICS[0],remoteStream,false,existingHasVideo);
             });
             call.on('error',e=>console.error('call-to-host err',e));
         });
-
         hostConn.on('data',handleDataFromHost);
-        hostConn.on('close',()=>{
-            stopHeartbeat();
-            // FIX 2: Use randomised delay instead of fixed 2s
-            scheduleTakeover();
-        });
+        hostConn.on('close',()=>{ stopHeartbeat(); scheduleTakeover(); });
         hostConn.on('error',e=>console.error('hostConn err',e));
-
         peer.on('call',incomingCall=>{
             const meta=incomingCall.metadata||{};
-            if(!meta.relay){incomingCall.close();return;}
+            if(!meta.relay){ incomingCall.close(); return; }
             incomingCall.answer(localStream);
             incomingCall.on('stream',remoteStream=>{
-                ensureAudioPlaying(remoteStream, meta.sourceId);
-                // Never derive hasVideo from the relay stream's track state —
-                // t.enabled is always true on the receiver side regardless of
-                // whether the sender has their camera on. Trust only cam-status
-                // data packets. Preserve existing hasVideo if we already know it.
-                const existingHasVideo = participants[meta.sourceId]?.hasVideo || false;
-                upsertParticipant(meta.sourceId,meta.sourceName,meta.sourcePic,
-                                  remoteStream,false,existingHasVideo);
+                ensureAudioPlaying(remoteStream,meta.sourceId);
+                const existingHasVideo=participants[meta.sourceId]?.hasVideo||false;
+                upsertParticipant(meta.sourceId,meta.sourceName,meta.sourcePic,remoteStream,false,existingHasVideo);
             });
-            incomingCall.on('close',()=>{
-                delete participants[meta.sourceId];
-                renderAll();
-            });
+            incomingCall.on('close',()=>{ delete participants[meta.sourceId]; renderAll(); });
             incomingCall.on('error',e=>console.error('relay-in err',e));
         });
     });
-
-    peer.on('error',err=>{
-        console.error('guest peer err',err.type);
-        if(err.type==='peer-unavailable'){
-            // FIX 2: randomised delay here too
-            setTimeout(tryBecomeHost, randomTakeoverDelay());
-        }
-    });
-    peer.on('disconnected',()=>{try{peer.reconnect();}catch(e){}});
+    peer.on('error',err=>{ console.error('guest peer err',err.type); if(err.type==='peer-unavailable') setTimeout(tryBecomeHost,randomTakeoverDelay()); });
+    peer.on('disconnected',()=>{ try{ peer.reconnect(); }catch(e){} });
 }
 
-// ─────────────────────────────────────────────
-// AUDIO FIX
-// ─────────────────────────────────────────────
-const audioElements = {};
-
-function ensureAudioPlaying(stream, peerId){
-    if(!stream || !peerId || peerId === myPeerId) return;
-    if(!audioElements[peerId]){
-        const aud = document.createElement('audio');
-        aud.autoplay = true;
-        aud.style.display = 'none';
-        document.body.appendChild(aud);
-        audioElements[peerId] = aud;
-    }
-    const aud = audioElements[peerId];
-    if(aud.srcObject !== stream){
-        aud.srcObject = stream;
-        aud.play().catch(e=>console.warn('audio play blocked:',e));
-    }
+const audioElements={};
+function ensureAudioPlaying(stream,peerId){
+    if(!stream||!peerId||peerId===myPeerId) return;
+    if(!audioElements[peerId]){ const aud=document.createElement('audio'); aud.autoplay=true; aud.style.display='none'; document.body.appendChild(aud); audioElements[peerId]=aud; }
+    const aud=audioElements[peerId];
+    if(aud.srcObject!==stream){ aud.srcObject=stream; aud.play().catch(e=>console.warn('audio play blocked:',e)); }
 }
+function cleanupAudioElement(peerId){ if(audioElements[peerId]){ audioElements[peerId].srcObject=null; audioElements[peerId].remove(); delete audioElements[peerId]; } }
 
-function cleanupAudioElement(peerId){
-    if(audioElements[peerId]){
-        audioElements[peerId].srcObject = null;
-        audioElements[peerId].remove();
-        delete audioElements[peerId];
-    }
-}
-
-// ─────────────────────────────────────────────
-// HOST — incoming data connection
-// ─────────────────────────────────────────────
 function onGuestConn(conn){
-    const gid=conn.peer, meta=conn.metadata||{};
+    const gid=conn.peer,meta=conn.metadata||{};
     if(!connections[gid]) connections[gid]={};
-    connections[gid].conn=conn;
-    connections[gid].name=meta.name||'Guest';
-    connections[gid].pic=meta.pic||PICS[0];
-    connections[gid].lastPing=Date.now();
+    connections[gid].conn=conn; connections[gid].name=meta.name||'Guest'; connections[gid].pic=meta.pic||PICS[0]; connections[gid].lastPing=Date.now();
     upsertParticipant(gid,meta.name,meta.pic,null,false,false);
-
     conn.on('open',()=>{
-        const list=Object.entries(participants).map(([id,p])=>({
-            id,name:p.name,pic:p.pic,muted:p.muted,hasVideo:p.hasVideo
-        }));
+        const list=Object.entries(participants).map(([id,p])=>({id,name:p.name,pic:p.pic,muted:p.muted,hasVideo:p.hasVideo}));
         conn.send({type:'init',participants:list});
         broadcastExcept({type:'joined',participant:{id:gid,name:meta.name,pic:meta.pic}},gid);
         addSysMsg(`${meta.name} joined`);
@@ -978,548 +812,225 @@ function onGuestConn(conn){
     conn.on('error',e=>console.error('guest conn err',e));
 }
 
-// ─────────────────────────────────────────────
-// HOST — incoming media call from a guest
-// ─────────────────────────────────────────────
 function onGuestCall(call){
-    const gid=call.peer, meta=call.metadata||{};
+    const gid=call.peer,meta=call.metadata||{};
     if(!connections[gid]) connections[gid]={};
     connections[gid].call=call;
-
     call.answer(localStream);
-
     call.on('stream',guestStream=>{
         const name=meta.name||connections[gid]?.name||'Guest';
         const pic=meta.pic||connections[gid]?.pic||PICS[0];
-        // Don't derive hasVideo from track state — t.enabled is local-only
-        // and doesn't reflect sender's camera state. Keep existing or default false.
-        const hasVid = participants[gid]?.hasVideo || false;
-
-        connections[gid].stream=guestStream;
-        connections[gid].name=name;
-        connections[gid].pic=pic;
-
-        ensureAudioPlaying(guestStream, gid);
-
+        const hasVid=participants[gid]?.hasVideo||false;
+        connections[gid].stream=guestStream; connections[gid].name=name; connections[gid].pic=pic;
+        ensureAudioPlaying(guestStream,gid);
         upsertParticipant(gid,name,pic,guestStream,false,hasVid);
-
-        Object.entries(connections).forEach(([otherId,other])=>{
-            if(otherId===gid) return;
-            if(!other.conn||!other.conn.open) return;
-            relayTo(otherId, gid, name, pic, guestStream);
-        });
-
-        Object.entries(connections).forEach(([otherId,other])=>{
-            if(otherId===gid) return;
-            if(!other.stream) return;
-            relayTo(gid, otherId, other.name, other.pic, other.stream);
-        });
+        Object.entries(connections).forEach(([otherId,other])=>{ if(otherId===gid||!other.conn||!other.conn.open) return; relayTo(otherId,gid,name,pic,guestStream); });
+        Object.entries(connections).forEach(([otherId,other])=>{ if(otherId===gid||!other.stream) return; relayTo(gid,otherId,other.name,other.pic,other.stream); });
     });
-
-    call.on('close',()=>{
-        if(participants[gid]){participants[gid].stream=null;participants[gid].hasVideo=false;}
-        renderAll();
-    });
+    call.on('close',()=>{ if(participants[gid]){ participants[gid].stream=null; participants[gid].hasVideo=false; } renderAll(); });
     call.on('error',e=>console.error('guest call err',e));
 }
 
-// ─────────────────────────────────────────────
-// HOST — relay helper
-// ─────────────────────────────────────────────
-function relayTo(targetId, sourceId, sourceName, sourcePic, sourceStream){
+function relayTo(targetId,sourceId,sourceName,sourcePic,sourceStream){
     if(!connections[targetId]?.conn?.open) return;
-    const rc=peer.call(targetId,sourceStream,{
-        metadata:{relay:true,sourceId,sourceName,sourcePic}
-    });
+    const rc=peer.call(targetId,sourceStream,{metadata:{relay:true,sourceId,sourceName,sourcePic}});
     if(!connections[sourceId]) connections[sourceId]={};
     if(!connections[sourceId].relays) connections[sourceId].relays={};
     connections[sourceId].relays[targetId]=rc;
     rc.on('error',e=>console.error('relay err',e));
 }
 
-// ─────────────────────────────────────────────
-// HOST — handle messages from a guest
-// ─────────────────────────────────────────────
 function handleDataFromGuest(sid,d){
     switch(d.type){
-        case 'ping':
-            if(connections[sid]?.conn?.open)
-                try{connections[sid].conn.send({type:'pong',ts:d.ts});}catch(e){}
-            break;
-        case 'pong':
-            if(connections[sid]) connections[sid].lastPing=Date.now();
-            break;
-        case 'mute-status':
-            if(participants[sid]) participants[sid].muted=d.muted;
-            renderAll();
-            broadcastExcept({type:'mute-status',id:sid,muted:d.muted},sid);
-            break;
-        case 'cam-status':
-            if(participants[sid]) participants[sid].hasVideo=d.hasVideo;
-            renderAll();
-            broadcastExcept({type:'cam-status',id:sid,hasVideo:d.hasVideo},sid);
-            break;
-        case 'chat':
-            broadcastAll({type:'chat',name:d.name,text:d.text,time:d.time});
-            addMsg(d.name,d.text,d.time,false);
-            break;
+        case 'ping': if(connections[sid]?.conn?.open) try{ connections[sid].conn.send({type:'pong',ts:d.ts}); }catch(e){} break;
+        case 'pong': if(connections[sid]) connections[sid].lastPing=Date.now(); break;
+        case 'mute-status': if(participants[sid]) participants[sid].muted=d.muted; renderAll(); broadcastExcept({type:'mute-status',id:sid,muted:d.muted},sid); break;
+        case 'cam-status': if(participants[sid]) participants[sid].hasVideo=d.hasVideo; renderAll(); broadcastExcept({type:'cam-status',id:sid,hasVideo:d.hasVideo},sid); break;
+        case 'chat': broadcastAll({type:'chat',name:d.name,text:d.text,time:d.time}); addMsg(d.name,d.text,d.time,false); break;
     }
 }
 
-// ─────────────────────────────────────────────
-// GUEST — handle messages from host
-// ─────────────────────────────────────────────
 function handleDataFromHost(d){
     switch(d.type){
-        case 'ping':
-            hostLastPing=Date.now();
-            if(hostConn&&hostConn.open) try{hostConn.send({type:'pong',ts:d.ts});}catch(e){}
-            break;
-        case 'pong':
-            hostLastPing=Date.now();
-            break;
-        case 'init':
-            d.participants.forEach(p=>{
-                if(p.id!==myPeerId)
-                    upsertParticipant(p.id,p.name,p.pic,null,p.muted,p.hasVideo);
-            });
-            break;
-        case 'joined':
-            if(d.participant.id!==myPeerId){
-                upsertParticipant(d.participant.id,d.participant.name,d.participant.pic,null,false,false);
-                addSysMsg(`${d.participant.name} joined`);
-            }
-            break;
-        case 'left':
-            if(d.id!==myPeerId){
-                delete participants[d.id];
-                cleanupAudioElement(d.id);
-                renderAll();
-                addSysMsg(`${d.name} left`);
-            }
-            break;
-        case 'mute-status':
-            if(participants[d.id]) participants[d.id].muted=d.muted;
-            renderAll(); break;
-        case 'cam-status':
-            if(participants[d.id]) participants[d.id].hasVideo=d.hasVideo;
-            renderAll(); break;
-        case 'chat':
-            if(d.name!==myName) addMsg(d.name,d.text,d.time,false);
-            break;
+        case 'ping': hostLastPing=Date.now(); if(hostConn&&hostConn.open) try{ hostConn.send({type:'pong',ts:d.ts}); }catch(e){} break;
+        case 'pong': hostLastPing=Date.now(); break;
+        case 'init': d.participants.forEach(p=>{ if(p.id!==myPeerId) upsertParticipant(p.id,p.name,p.pic,null,p.muted,p.hasVideo); }); break;
+        case 'joined': if(d.participant.id!==myPeerId){ upsertParticipant(d.participant.id,d.participant.name,d.participant.pic,null,false,false); addSysMsg(`${d.participant.name} joined`); } break;
+        case 'left': if(d.id!==myPeerId){ delete participants[d.id]; cleanupAudioElement(d.id); renderAll(); addSysMsg(`${d.name} left`); } break;
+        case 'mute-status': if(participants[d.id]) participants[d.id].muted=d.muted; renderAll(); break;
+        case 'cam-status': if(participants[d.id]) participants[d.id].hasVideo=d.hasVideo; renderAll(); break;
+        case 'chat': if(d.name!==myName) addMsg(d.name,d.text,d.time,false); break;
     }
 }
 
-// ─────────────────────────────────────────────
-// HOST — broadcast helpers
-// ─────────────────────────────────────────────
-function broadcastAll(data){
-    Object.values(connections).forEach(c=>{
-        if(c.conn&&c.conn.open) try{c.conn.send(data);}catch(e){}
-    });
-}
-function broadcastExcept(data,skip){
-    Object.entries(connections).forEach(([id,c])=>{
-        if(id===skip) return;
-        if(c.conn&&c.conn.open) try{c.conn.send(data);}catch(e){}
-    });
-}
+function broadcastAll(data){ Object.values(connections).forEach(c=>{ if(c.conn&&c.conn.open) try{ c.conn.send(data); }catch(e){} }); }
+function broadcastExcept(data,skip){ Object.entries(connections).forEach(([id,c])=>{ if(id===skip) return; if(c.conn&&c.conn.open) try{ c.conn.send(data); }catch(e){} }); }
 
-// ─────────────────────────────────────────────
-// HOST — remove guest
-// ─────────────────────────────────────────────
 function removeGuest(gid){
     const name=participants[gid]?.name||'Someone';
-    if(connections[gid]?.relays)
-        Object.values(connections[gid].relays).forEach(r=>{try{r.close();}catch(e){}});
+    if(connections[gid]?.relays) Object.values(connections[gid].relays).forEach(r=>{ try{ r.close(); }catch(e){} });
     cleanupAudioElement(gid);
-    delete participants[gid];
-    delete connections[gid];
-    renderAll();
-    broadcastAll({type:'left',id:gid,name});
-    addSysMsg(`${name} left`);
+    delete participants[gid]; delete connections[gid];
+    renderAll(); broadcastAll({type:'left',id:gid,name}); addSysMsg(`${name} left`);
 }
 
-// ─────────────────────────────────────────────
-// Participant upsert
-// ─────────────────────────────────────────────
 function upsertParticipant(id,name,pic,stream,muted,hasVideo){
     if(!participants[id]) participants[id]={name,pic,stream,muted,hasVideo};
     else{
-        if(name)          participants[id].name=name;
-        if(pic)           participants[id].pic=pic;
+        if(name) participants[id].name=name;
+        if(pic) participants[id].pic=pic;
         if(stream!==null) participants[id].stream=stream;
-        participants[id].muted=muted;
-        participants[id].hasVideo=hasVideo;
+        participants[id].muted=muted; participants[id].hasVideo=hasVideo;
     }
-    if(id !== myPeerId && participants[id].stream)
-        ensureAudioPlaying(participants[id].stream, id);
+    if(id!==myPeerId&&participants[id].stream) ensureAudioPlaying(participants[id].stream,id);
     renderAll();
 }
 
-// ─────────────────────────────────────────────
-// LOBBY ONLINE COUNT — Firestore realtime listener
-// Shows how many people are currently in the call
-// on the join screen. The host writes the count;
-// everyone reads it.
-// ─────────────────────────────────────────────
-let unsubLobbyCount = null;
-
+let unsubLobbyCount=null;
 function startLobbyCountListener(){
     if(unsubLobbyCount) return;
-    unsubLobbyCount = db.collection('room').doc('main').onSnapshot(doc=>{
-        const n = doc.exists ? (doc.data().onlineCount || 0) : 0;
-        const pill = qs('joinOnlinePill');
-        const cnt  = qs('joinOnlineCount');
-        if(n > 0){
-            cnt.textContent = n;
-            pill.style.display = 'inline-flex';
-        } else {
-            pill.style.display = 'none';
-        }
-    }, ()=>{}); // silently ignore errors (no permission when not logged in yet)
+    unsubLobbyCount=db.collection('room').doc('main').onSnapshot(doc=>{
+        const n=doc.exists?(doc.data().onlineCount||0):0;
+        const pill=qs('joinOnlinePill'),cnt=qs('joinOnlineCount');
+        if(n>0){ cnt.textContent=n; pill.style.display='inline-flex'; } else { pill.style.display='none'; }
+    },()=>{});
 }
-
-function stopLobbyCountListener(){
-    if(unsubLobbyCount){ unsubLobbyCount(); unsubLobbyCount=null; }
-}
-
-// Host writes the current participant count to Firestore
 function pushOnlineCount(){
     if(!isHost) return;
-    const n = Object.keys(participants).length;
-    db.collection('room').doc('main').set({onlineCount: n}, {merge:true}).catch(()=>{});
+    db.collection('room').doc('main').set({onlineCount:Object.keys(participants).length},{merge:true}).catch(()=>{});
 }
 
-
-// ─────────────────────────────────────────────
-function applyGridLayout(grid, n){
-    const isMobile = window.innerWidth <= 700;
-
-    grid.style.gridTemplateAreas = '';
-
-    if(n === 0) return;
-
-    if(n === 1){
-        grid.style.gridTemplateColumns = '1fr';
-        grid.style.gridTemplateRows    = '1fr';
-        return;
-    }
-
-    if(n === 2){
-        if(isMobile){
-            grid.style.gridTemplateColumns = '1fr';
-            grid.style.gridTemplateRows    = '1fr 1fr';
-        } else {
-            grid.style.gridTemplateColumns = '1fr 1fr';
-            grid.style.gridTemplateRows    = '1fr';
-        }
-        return;
-    }
-
-    if(n === 3){
-        if(isMobile){
-            grid.style.gridTemplateColumns = '1fr 1fr';
-            grid.style.gridTemplateRows    = '3fr 2fr';
-            grid.style.gridTemplateAreas   = '"a a" "b c"';
-        } else {
-            grid.style.gridTemplateColumns = '13fr 7fr';
-            grid.style.gridTemplateRows    = '1fr 1fr';
-            grid.style.gridTemplateAreas   = '"a b" "a c"';
-        }
-        return;
-    }
-
-    if(n === 4){
-        grid.style.gridTemplateColumns = '1fr 1fr';
-        grid.style.gridTemplateRows    = '1fr 1fr';
-        return;
-    }
-
-    if(n === 5){
-        if(isMobile){
-            grid.style.gridTemplateColumns = '1fr 1fr';
-            grid.style.gridTemplateRows    = '2fr 1fr 1fr';
-            grid.style.gridTemplateAreas   = '"a a" "b c" "d e"';
-        } else {
-            grid.style.gridTemplateColumns = '3fr 2fr 2fr';
-            grid.style.gridTemplateRows    = '1fr 1fr';
-            grid.style.gridTemplateAreas   = '"a b c" "a d e"';
-        }
-        return;
-    }
-
-    if(n === 6){
-        if(isMobile){
-            grid.style.gridTemplateColumns = '1fr 1fr';
-            grid.style.gridTemplateRows    = '1fr 1fr 1fr';
-            grid.style.gridTemplateAreas   = '';
-        } else {
-            grid.style.gridTemplateColumns = '1fr 1fr 1fr';
-            grid.style.gridTemplateRows    = '1fr 1fr';
-            grid.style.gridTemplateAreas   = '';
-        }
-        return;
-    }
-
-    if(n === 7 || n === 8){
-        if(isMobile){
-            grid.style.gridTemplateColumns = '1fr 1fr';
-            grid.style.gridTemplateRows    = `repeat(${Math.ceil(n/2)}, 1fr)`;
-            grid.style.gridTemplateAreas   = '';
-        } else {
-            grid.style.gridTemplateColumns = '2fr 1fr 1fr';
-            grid.style.gridTemplateRows    = '1fr 1fr 1fr';
-            const others = ['b','c','d','e','f','g','h'].slice(0, n-1);
-            const r1 = others.slice(0,2).join(' ');
-            const r2 = others.slice(2,4).join(' ');
-            const r3 = others.slice(4,6).join(' ');
-            grid.style.gridTemplateAreas = `"a ${r1}" "a ${r2}" "a ${r3}"`;
-        }
-        return;
-    }
-
-    if(n <= 9){
-        grid.style.gridTemplateColumns = '1fr 1fr 1fr';
-        grid.style.gridTemplateRows    = '1fr 1fr 1fr';
-        return;
-    }
-    if(n <= 12){
-        grid.style.gridTemplateColumns = '1fr 1fr 1fr 1fr';
-        grid.style.gridTemplateRows    = `repeat(${Math.ceil(n/4)}, 1fr)`;
-        return;
-    }
-    const cols = Math.ceil(Math.sqrt(n));
-    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    grid.style.gridTemplateRows    = `repeat(${Math.ceil(n/cols)}, 1fr)`;
+function applyGridLayout(grid,n){
+    const isMobile=window.innerWidth<=700;
+    grid.style.gridTemplateAreas='';
+    if(n===0) return;
+    if(n===1){ grid.style.gridTemplateColumns='1fr'; grid.style.gridTemplateRows='1fr'; return; }
+    if(n===2){ if(isMobile){ grid.style.gridTemplateColumns='1fr'; grid.style.gridTemplateRows='1fr 1fr'; } else { grid.style.gridTemplateColumns='1fr 1fr'; grid.style.gridTemplateRows='1fr'; } return; }
+    if(n===3){ if(isMobile){ grid.style.gridTemplateColumns='1fr 1fr'; grid.style.gridTemplateRows='3fr 2fr'; grid.style.gridTemplateAreas='"a a" "b c"'; } else { grid.style.gridTemplateColumns='13fr 7fr'; grid.style.gridTemplateRows='1fr 1fr'; grid.style.gridTemplateAreas='"a b" "a c"'; } return; }
+    if(n===4){ grid.style.gridTemplateColumns='1fr 1fr'; grid.style.gridTemplateRows='1fr 1fr'; return; }
+    if(n===5){ if(isMobile){ grid.style.gridTemplateColumns='1fr 1fr'; grid.style.gridTemplateRows='2fr 1fr 1fr'; grid.style.gridTemplateAreas='"a a" "b c" "d e"'; } else { grid.style.gridTemplateColumns='3fr 2fr 2fr'; grid.style.gridTemplateRows='1fr 1fr'; grid.style.gridTemplateAreas='"a b c" "a d e"'; } return; }
+    if(n===6){ if(isMobile){ grid.style.gridTemplateColumns='1fr 1fr'; grid.style.gridTemplateRows='1fr 1fr 1fr'; } else { grid.style.gridTemplateColumns='1fr 1fr 1fr'; grid.style.gridTemplateRows='1fr 1fr'; } return; }
+    if(n===7||n===8){ if(isMobile){ grid.style.gridTemplateColumns='1fr 1fr'; grid.style.gridTemplateRows=`repeat(${Math.ceil(n/2)}, 1fr)`; } else { grid.style.gridTemplateColumns='2fr 1fr 1fr'; grid.style.gridTemplateRows='1fr 1fr 1fr'; const others=['b','c','d','e','f','g','h'].slice(0,n-1); grid.style.gridTemplateAreas=`"a ${others.slice(0,2).join(' ')}" "a ${others.slice(2,4).join(' ')}" "a ${others.slice(4,6).join(' ')}"`; } return; }
+    if(n<=9){ grid.style.gridTemplateColumns='1fr 1fr 1fr'; grid.style.gridTemplateRows='1fr 1fr 1fr'; return; }
+    if(n<=12){ grid.style.gridTemplateColumns='1fr 1fr 1fr 1fr'; grid.style.gridTemplateRows=`repeat(${Math.ceil(n/4)}, 1fr)`; return; }
+    const cols=Math.ceil(Math.sqrt(n));
+    grid.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
+    grid.style.gridTemplateRows=`repeat(${Math.ceil(n/cols)}, 1fr)`;
 }
 
-// ─────────────────────────────────────────────
-// RENDER — video grid + people list
-// ─────────────────────────────────────────────
 function renderAll(){
-    const grid=qs('videoGrid');
-    const plist=qs('peopleList');
-    const dplist=qs('drawerPeopleList');
+    const grid=qs('videoGrid'),plist=qs('peopleList'),dplist=qs('drawerPeopleList');
     grid.innerHTML=''; plist.innerHTML=''; dplist.innerHTML='';
-
-    const ids=Object.keys(participants);
-    const n=ids.length;
+    const ids=Object.keys(participants),n=ids.length;
     qs('onlineCount').textContent=n;
-    pushOnlineCount(); // keep Firestore in sync so lobby screen stays current
-
-    if(n===0){
-        grid.style.gridTemplateColumns='1fr';
-        grid.style.gridTemplateRows='1fr';
-        grid.style.gridTemplateAreas='';
-        grid.innerHTML='<div style="color:#555;text-align:center;padding:40px;display:flex;align-items:center;justify-content:center;grid-column:1/-1;">Waiting for others to join...</div>';
-        return;
-    }
-
+    pushOnlineCount();
+    if(n===0){ grid.style.gridTemplateColumns='1fr'; grid.style.gridTemplateRows='1fr'; grid.style.gridTemplateAreas=''; grid.innerHTML='<div style="color:#555;text-align:center;padding:40px;display:flex;align-items:center;justify-content:center;grid-column:1/-1;">Waiting for others to join...</div>'; return; }
     const ordered=[myPeerId,...ids.filter(id=>id!==myPeerId)];
-    const useSpotlight = n >= 3 && n <= 8;
-    const areaLetters  = ['a','b','c','d','e','f','g','h'];
-
-    applyGridLayout(grid, n);
-
-    const hasAreas = !!(grid.style.gridTemplateAreas && grid.style.gridTemplateAreas !== 'none' && grid.style.gridTemplateAreas !== '');
-
-    ordered.forEach((id, idx)=>{
+    const useSpotlight=n>=3&&n<=8;
+    const areaLetters=['a','b','c','d','e','f','g','h'];
+    applyGridLayout(grid,n);
+    const hasAreas=!!(grid.style.gridTemplateAreas&&grid.style.gridTemplateAreas!=='none'&&grid.style.gridTemplateAreas!=='');
+    ordered.forEach((id,idx)=>{
         const p=participants[id]; if(!p) return;
         const isMe=(id===myPeerId);
-        const isSpotlight = isMe && useSpotlight && hasAreas;
-
+        const isSpotlight=isMe&&useSpotlight&&hasAreas;
         const tile=document.createElement('div');
         tile.className='vtile'+(isSpotlight?' spotlight':'');
-
-        if(hasAreas && idx < areaLetters.length){
-            tile.style.gridArea = areaLetters[idx];
-        }
-
-        // ─── FIX 1: For "me", only show live video when cam is ON AND
-        // the track is truly active. Otherwise ALWAYS show the avatar overlay.
-        // Previously a disabled-but-live track could slip through and render
-        // a black rectangle because object-fit:contain shows the black frame.
-        let showVid = false;
-        if(isMe){
-            showVid = camOn &&
-                      hasVideoPermission &&
-                      localStream != null &&
-                      localStream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-        } else {
-            // For remote users: t.enabled is always true on the receiver side
-            // regardless of sender's camera state. The only reliable signal is
-            // the hasVideo flag set by cam-status data packets.
-            showVid = p.hasVideo &&
-                      p.stream != null &&
-                      p.stream.getVideoTracks().some(t => t.readyState === 'live');
-        }
-
+        if(hasAreas&&idx<areaLetters.length) tile.style.gridArea=areaLetters[idx];
+        let showVid=false;
+        if(isMe){ showVid=camOn&&hasVideoPermission&&localStream!=null&&localStream.getVideoTracks().some(t=>t.enabled&&t.readyState==='live'); }
+        else { showVid=p.hasVideo&&p.stream!=null&&p.stream.getVideoTracks().some(t=>t.readyState==='live'); }
         if(showVid){
-            const vid=document.createElement('video');
-            vid.autoplay=true; vid.playsInline=true; vid.muted=isMe;
-            vid.srcObject= isMe ? localStream : p.stream;
-            tile.appendChild(vid);
-            if(!isMe) ensureAudioPlaying(p.stream, id);
-        } else {
-            // ─── FIX 1: Always show the avatar overlay when camera is off.
-            // Use myPicUrl for self so it's correct on first render, before
-            // the participants map has a chance to be set.
+            const vid=document.createElement('video'); vid.autoplay=true; vid.playsInline=true; vid.muted=isMe;
+            vid.srcObject=isMe?localStream:p.stream; tile.appendChild(vid);
+            if(!isMe) ensureAudioPlaying(p.stream,id);
+        }else{
             const ov=document.createElement('div'); ov.className='av-overlay';
-            const img=document.createElement('img');
-            img.src = isMe ? myPicUrl : (p.pic || PICS[0]);
-            img.onerror=()=>img.src=PICS[0];
+            const img=document.createElement('img'); img.src=isMe?myPicUrl:(p.pic||PICS[0]); img.onerror=()=>img.src=PICS[0];
             const nm=document.createElement('span'); nm.textContent=p.name+(isMe?' (you)':'');
             ov.append(img,nm); tile.appendChild(ov);
         }
-
         const lbl=document.createElement('div'); lbl.className='name-label';
-        const limg=document.createElement('img');
-        limg.src = isMe ? myPicUrl : (p.pic || PICS[0]);
-        limg.onerror=()=>limg.src=PICS[0];
-        lbl.append(limg,document.createTextNode(p.name+(isMe?' (you)':'')));
-        tile.appendChild(lbl);
-
-        const mb=document.createElement('div');
-        mb.className='mute-icon'+(p.muted?' show':'');
-        mb.textContent='🔇'; tile.appendChild(mb);
-
+        const limg=document.createElement('img'); limg.src=isMe?myPicUrl:(p.pic||PICS[0]); limg.onerror=()=>limg.src=PICS[0];
+        lbl.append(limg,document.createTextNode(p.name+(isMe?' (you)':''))); tile.appendChild(lbl);
+        const mb=document.createElement('div'); mb.className='mute-icon'+(p.muted?' show':''); mb.textContent='🔇'; tile.appendChild(mb);
         grid.appendChild(tile);
-
         function makePerson(){
             const pi=document.createElement('div'); pi.className='person';
-            const pimg=document.createElement('img');
-            pimg.src = isMe ? myPicUrl : (p.pic || PICS[0]);
-            pimg.onerror=()=>pimg.src=PICS[0];
-            const pn=document.createElement('span'); pn.className='person-name';
-            pn.textContent=p.name+(isMe?' (you)':'');
+            const pimg=document.createElement('img'); pimg.src=isMe?myPicUrl:(p.pic||PICS[0]); pimg.onerror=()=>pimg.src=PICS[0];
+            const pn=document.createElement('span'); pn.className='person-name'; pn.textContent=p.name+(isMe?' (you)':'');
             pi.append(pimg,pn); return pi;
         }
-        plist.appendChild(makePerson());
-        dplist.appendChild(makePerson());
+        plist.appendChild(makePerson()); dplist.appendChild(makePerson());
     });
 }
+window.addEventListener('resize',()=>{ if(qs('app').style.display!=='none') renderAll(); });
 
-window.addEventListener('resize', ()=>{ if(qs('app').style.display!=='none') renderAll(); });
-
-// ─────────────────────────────────────────────
-// CHAT
-// ─────────────────────────────────────────────
 function addMsg(name,text,time,isMe){
     function makeMsg(){
-        const d=document.createElement('div');
-        d.className='msg'+(isMe?' me':'');
-        d.innerHTML=`<div class="msg-head">
-            <span class="msg-name${isMe?' me':''}">${esc(name)}</span>
-            <span class="msg-time">${esc(time)}</span>
-        </div><div class="msg-body">${esc(text)}</div>`;
+        const d=document.createElement('div'); d.className='msg'+(isMe?' me':'');
+        d.innerHTML=`<div class="msg-head"><span class="msg-name${isMe?' me':''}">${esc(name)}</span><span class="msg-time">${esc(time)}</span></div><div class="msg-body">${esc(text)}</div>`;
         return d;
     }
     const c1=qs('chatMsgs'); c1.appendChild(makeMsg()); c1.scrollTop=c1.scrollHeight;
     const c2=qs('drawerChatMsgs'); c2.appendChild(makeMsg()); c2.scrollTop=c2.scrollHeight;
 }
 function addSysMsg(text){
-    function makeSys(){
-        const d=document.createElement('div'); d.className='msg sys';
-        d.innerHTML=`<div class="msg-body">— ${esc(text)}</div>`;
-        return d;
-    }
+    function makeSys(){ const d=document.createElement('div'); d.className='msg sys'; d.innerHTML=`<div class="msg-body">— ${esc(text)}</div>`; return d; }
     const c1=qs('chatMsgs'); c1.appendChild(makeSys()); c1.scrollTop=c1.scrollHeight;
     const c2=qs('drawerChatMsgs'); c2.appendChild(makeSys()); c2.scrollTop=c2.scrollHeight;
 }
 function sendChat(){
-    const mobileActive = window.innerWidth <= 700;
-    const inp = mobileActive ? qs('drawerChatIn') : qs('chatIn');
+    const mobileActive=window.innerWidth<=700;
+    const inp=mobileActive?qs('drawerChatIn'):qs('chatIn');
     const text=inp.value.trim(); if(!text) return;
     inp.value=''; const time=hhmm();
     addMsg(myName,text,time,true);
     const pkt={type:'chat',name:myName,text,time};
-    if(isHost){broadcastAll(pkt);}
-    else if(hostConn&&hostConn.open){hostConn.send(pkt);}
+    if(isHost){ broadcastAll(pkt); } else if(hostConn&&hostConn.open){ hostConn.send(pkt); }
 }
-qs('chatIn').onkeypress=e=>{if(e.key==='Enter') sendChat();};
+qs('chatIn').onkeypress=e=>{ if(e.key==='Enter') sendChat(); };
 qs('sendBtn').onclick=sendChat;
-qs('drawerChatIn').onkeypress=e=>{if(e.key==='Enter') sendChat();};
+qs('drawerChatIn').onkeypress=e=>{ if(e.key==='Enter') sendChat(); };
 qs('drawerSendBtn').onclick=sendChat;
 
-// ─────────────────────────────────────────────
-// MIC TOGGLE
-// ─────────────────────────────────────────────
 function toggleMic(){
     micOn=!micOn;
     if(localStream) localStream.getAudioTracks().forEach(t=>t.enabled=micOn);
     if(participants[myPeerId]) participants[myPeerId].muted=!micOn;
-    renderAll(); updateCtrlBtns();
-    toast(micOn?'Microphone ON':'Microphone OFF');
+    renderAll(); updateCtrlBtns(); toast(micOn?'Microphone ON':'Microphone OFF');
     const pkt={type:'mute-status',muted:!micOn};
-    if(isHost) broadcastAll({...pkt,id:HOST_ID});
-    else if(hostConn&&hostConn.open) hostConn.send(pkt);
+    if(isHost) broadcastAll({...pkt,id:HOST_ID}); else if(hostConn&&hostConn.open) hostConn.send(pkt);
 }
-
-// ─────────────────────────────────────────────
-// CAMERA TOGGLE
-// ─────────────────────────────────────────────
 function toggleCam(){
-    if(!hasVideoPermission){
-        toast('Camera not available — close other apps using it and rejoin');
-        return;
-    }
-    const vTracks=localStream ? localStream.getVideoTracks() : [];
-    if(vTracks.length===0){
-        toast('No camera track found — try rejoining');
-        return;
-    }
-    camOn=!camOn;
-    vTracks.forEach(t=>{ t.enabled=camOn; });
-    if(participants[myPeerId]){
-        participants[myPeerId].hasVideo=camOn;
-        participants[myPeerId].stream=localStream;
-    }
-    renderAll(); updateCtrlBtns();
-    toast(camOn?'Camera ON':'Camera OFF');
+    if(!hasVideoPermission){ toast('Camera not available — close other apps using it and rejoin'); return; }
+    const vTracks=localStream?localStream.getVideoTracks():[];
+    if(vTracks.length===0){ toast('No camera track found — try rejoining'); return; }
+    camOn=!camOn; vTracks.forEach(t=>{ t.enabled=camOn; });
+    if(participants[myPeerId]){ participants[myPeerId].hasVideo=camOn; participants[myPeerId].stream=localStream; }
+    renderAll(); updateCtrlBtns(); toast(camOn?'Camera ON':'Camera OFF');
     const pkt={type:'cam-status',hasVideo:camOn};
-    if(isHost) broadcastAll({...pkt,id:HOST_ID});
-    else if(hostConn&&hostConn.open) hostConn.send(pkt);
+    if(isHost) broadcastAll({...pkt,id:HOST_ID}); else if(hostConn&&hostConn.open) hostConn.send(pkt);
 }
-
-// ─────────────────────────────────────────────
-// UPDATE TOGGLE VISUALS
-// ─────────────────────────────────────────────
 function updateCtrlBtns(){
-    const m=qs('micBtn'), c=qs('camBtn');
-    m.className='toggle-pill '+(micOn?'state-on':'state-off');
-    m.querySelector('.pill-text').textContent=micOn?'ON':'OFF';
-    c.className='toggle-pill '+(camOn?'state-on':'state-off');
-    c.querySelector('.pill-text').textContent=camOn?'ON':'OFF';
+    const m=qs('micBtn'),c=qs('camBtn');
+    m.className='toggle-pill '+(micOn?'state-on':'state-off'); m.querySelector('.pill-text').textContent=micOn?'ON':'OFF';
+    c.className='toggle-pill '+(camOn?'state-on':'state-off'); c.querySelector('.pill-text').textContent=camOn?'ON':'OFF';
 }
 
-// ─────────────────────────────────────────────
-// EXIT
-// ─────────────────────────────────────────────
 function exitCall(){
-    cancelTakeover();
-    stopHeartbeat();
-    // Clear Firestore count if we were the host
+    cancelTakeover(); stopHeartbeat();
     if(isHost){
         db.collection('room').doc('main').set({onlineCount:0},{merge:true}).catch(()=>{});
-        Object.values(connections).forEach(c=>{
-            try{c.call?.close();}catch(e){}
-            try{c.conn?.close();}catch(e){}
-            if(c.relays) Object.values(c.relays).forEach(r=>{try{r.close();}catch(e){}});
-        });
-    }else{
-        try{hostConn?.close();}catch(e){}
-    }
+        Object.values(connections).forEach(c=>{ try{ c.call?.close(); }catch(e){} try{ c.conn?.close(); }catch(e){} if(c.relays) Object.values(c.relays).forEach(r=>{ try{ r.close(); }catch(e){} }); });
+    }else{ try{ hostConn?.close(); }catch(e){} }
     Object.keys(audioElements).forEach(cleanupAudioElement);
-    if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
-    try{peer?.destroy();}catch(e){}
-    peer=null; hostConn=null;
-    participants={}; connections={};
+    if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
+    try{ peer?.destroy(); }catch(e){}
+    peer=null; hostConn=null; participants={}; connections={};
     isHost=false; myPeerId=''; micOn=true; camOn=false; hasVideoPermission=false;
-    qs('chatMsgs').innerHTML='';
-    qs('drawerChatMsgs').innerHTML='';
-    qs('app').style.display='none';
-    qs('authWrap').style.display='block';
+    qs('chatMsgs').innerHTML=''; qs('drawerChatMsgs').innerHTML='';
+    qs('app').style.display='none'; qs('authWrap').style.display='block';
     updateCtrlBtns();
     if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
 }
@@ -1528,65 +1039,35 @@ qs('micBtn').onclick=toggleMic;
 qs('camBtn').onclick=toggleCam;
 qs('endBtn').onclick=exitCall;
 
-// ─────────────────────────────────────────────
-// DESKTOP TABS
-// ─────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab=>{
     tab.onclick=()=>{
-        document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
+        document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); tab.classList.add('active');
         const which=tab.dataset.tab;
-        qs('chatPanel').classList.toggle('active',which==='chat');
-        qs('peoplePanel').classList.toggle('active',which==='people');
+        qs('chatPanel').classList.toggle('active',which==='chat'); qs('peoplePanel').classList.toggle('active',which==='people');
     };
 });
 
-// ─────────────────────────────────────────────
-// MOBILE DRAWER
-// ─────────────────────────────────────────────
-function openDrawer(){
-    qs('mobileDrawer').classList.add('open');
-    qs('drawerOverlay').classList.add('open');
-}
-function closeDrawer(){
-    qs('mobileDrawer').classList.remove('open');
-    qs('drawerOverlay').classList.remove('open');
-}
+function openDrawer(){ qs('mobileDrawer').classList.add('open'); qs('drawerOverlay').classList.add('open'); }
+function closeDrawer(){ qs('mobileDrawer').classList.remove('open'); qs('drawerOverlay').classList.remove('open'); }
 qs('drawerToggleBtn').onclick=openDrawer;
 qs('drawerClose').onclick=closeDrawer;
 qs('drawerOverlay').onclick=closeDrawer;
 
 document.querySelectorAll('.drawer-tab').forEach(tab=>{
     tab.onclick=()=>{
-        document.querySelectorAll('.drawer-tab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
+        document.querySelectorAll('.drawer-tab').forEach(t=>t.classList.remove('active')); tab.classList.add('active');
         const which=tab.dataset.dtab;
-        qs('drawerChatPanel').classList.toggle('active',which==='chat');
-        qs('drawerPeoplePanel').classList.toggle('active',which==='people');
+        qs('drawerChatPanel').classList.toggle('active',which==='chat'); qs('drawerPeoplePanel').classList.toggle('active',which==='people');
     };
 });
 
-// ─────────────────────────────────────────────
-// FULLSCREEN
-// ─────────────────────────────────────────────
 qs('fullscreenBtn').onclick=()=>{
     const appEl=qs('app');
-    if(!document.fullscreenElement){
-        (appEl.requestFullscreen||appEl.webkitRequestFullscreen||appEl.mozRequestFullScreen).call(appEl)
-            .catch(e=>console.warn('Fullscreen err:',e));
-    } else {
-        (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document)
-            .catch(e=>console.warn('Exit fullscreen err:',e));
-    }
+    if(!document.fullscreenElement){ (appEl.requestFullscreen||appEl.webkitRequestFullscreen||appEl.mozRequestFullScreen).call(appEl).catch(e=>console.warn('Fullscreen err:',e)); }
+    else { (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document).catch(e=>console.warn('Exit fullscreen err:',e)); }
 };
-document.addEventListener('fullscreenchange',()=>{
-    qs('fullscreenBtn').textContent = document.fullscreenElement ? '✕' : '⛶';
-    qs('fullscreenBtn').title = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
-});
-document.addEventListener('webkitfullscreenchange',()=>{
-    const isFs=!!(document.fullscreenElement||document.webkitFullscreenElement);
-    qs('fullscreenBtn').textContent = isFs ? '⊠' : '⛶';
-});
+document.addEventListener('fullscreenchange',()=>{ qs('fullscreenBtn').textContent=document.fullscreenElement?'✕':'⛶'; qs('fullscreenBtn').title=document.fullscreenElement?'Exit Fullscreen':'Fullscreen'; });
+document.addEventListener('webkitfullscreenchange',()=>{ const isFs=!!(document.fullscreenElement||document.webkitFullscreenElement); qs('fullscreenBtn').textContent=isFs?'⊠':'⛶'; });
 </script>
 </body>
 </html>
