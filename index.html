@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,11 +10,10 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-
-        html { height: 100%; }
+        html, body { height:100%; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #000;
+            background: #0d0d1a;
             height: 100%;
             overflow: hidden;
             display: flex;
@@ -24,14 +22,22 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
         }
 
         /* ===== AUTH ===== */
+        #authWrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+        }
         .auth-container {
-            background: rgba(255,255,255,0.92);
-            backdrop-filter: blur(10px);
-            border-radius: 10px;
-            padding: 18px 14px;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(12px);
+            border-radius: 12px;
+            padding: 20px 16px;
             width: 320px;
-            box-shadow: 0 3px 15px rgba(0,0,0,0.15);
-            border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.22);
+            border: 1px solid rgba(255,255,255,0.25);
             position: relative;
         }
         .auth-btn {
@@ -39,6 +45,7 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             background: linear-gradient(145deg,#1877f2,#1658d4);
             color:white; border:none; border-radius:6px;
             font-size:13px; font-weight:600; cursor:pointer;
+            transition: opacity .15s;
         }
         .auth-btn:hover { opacity:0.9; }
         .form-input {
@@ -66,6 +73,7 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             background: linear-gradient(145deg,#4285F4,#1a73e8);
             color:white; border:none; border-radius:6px;
             font-size:15px; font-weight:600; cursor:pointer;
+            transition: opacity .15s;
         }
         .join-btn:hover { opacity:0.92; }
         .signout-btn {
@@ -121,7 +129,6 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
         }
         .fullscreen-btn:hover { background:rgba(255,255,255,0.16); }
 
-        /* Body: video grid + sidebar */
         .app-body { display:flex; flex:1; overflow:hidden; min-height:0; }
 
         .video-grid {
@@ -137,7 +144,6 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             justify-content:center;
         }
 
-        /* Tiles — video is object-fit:contain by default (NOT zoomed) */
         .vtile {
             position:relative;
             background:#1c1c2e;
@@ -153,7 +159,7 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
         }
         .vtile video {
             width:100%; height:100%;
-            object-fit:contain;   /* NOT cropped/zoomed — same as original */
+            object-fit:contain;
             display:block;
             background:#0a0a14;
         }
@@ -191,7 +197,6 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
         }
         .screen-badge.show { display:flex; }
 
-        /* Zoom button on each tile */
         .vtile .zoom-btn {
             position:absolute; top:8px; right:8px;
             background:rgba(0,0,0,0.55); border:none;
@@ -202,13 +207,23 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             backdrop-filter:blur(4px);
         }
         .vtile:hover .zoom-btn { opacity:1; }
-        /* On mobile always show */
         @media(max-width:700px){ .vtile .zoom-btn { opacity:0.75; } }
-        /* Hide zoom when mute icon is also shown — push zoom left */
         .vtile .mute-icon.show ~ .zoom-btn,
         .vtile .zoom-btn.muted-shift { right: 42px; }
 
-        /* ── PER-TILE FULLSCREEN OVERLAY ── */
+        /* Cam-recovering indicator */
+        .vtile .cam-recovering {
+            position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            background:rgba(0,0,0,0.7); color:#aaa; font-size:11px;
+            padding:5px 10px; border-radius:20px; z-index:5;
+            display:none; align-items:center; gap:5px;
+            backdrop-filter:blur(4px);
+        }
+        .vtile .cam-recovering.show { display:flex; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .spin-icon { display:inline-block; animation:spin 1s linear infinite; }
+
+        /* Per-tile fullscreen */
         .tile-fs-wrap {
             display: none;
             position: fixed;
@@ -219,15 +234,11 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             justify-content: center;
         }
         .tile-fs-wrap.open { display: flex; }
-        .tile-fs-wrap video {
-            width: 100%; height: 100%;
-            object-fit: contain;
-        }
+        .tile-fs-wrap video { width:100%; height:100%; object-fit:contain; }
         .tile-fs-wrap .av-overlay {
             position:absolute; inset:0;
             display:flex; flex-direction:column;
-            align-items:center; justify-content:center;
-            gap:14px;
+            align-items:center; justify-content:center; gap:14px;
         }
         .tile-fs-wrap .av-overlay img { width:140px; height:140px; border-radius:50%; border:4px solid #1877f2; object-fit:cover; }
         .tile-fs-wrap .av-overlay span { color:#ccc; font-size:18px; font-weight:500; }
@@ -246,30 +257,14 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
         }
         .tile-fs-name img { width:22px; height:22px; border-radius:50%; }
 
-        /* Fun effects */
-        @keyframes rainbow-bg {
-            0%{background:#ff000088}10%{background:#ff800088}20%{background:#ffff0088}
-            30%{background:#00ff0088}40%{background:#00ffff88}50%{background:#0000ff88}
-            60%{background:#8000ff88}70%{background:#ff00ff88}80%{background:#ff008088}
-            90%{background:#ff440088}100%{background:#ff000088}
+        /* ── CONFETTI CANVAS ── */
+        .confetti-canvas {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+            border-radius: 12px;
         }
-        .vtile.party-mode .av-overlay,
-        .vtile.party-mode { animation: rainbow-bg 0.6s linear infinite !important; }
-        .vtile.party-mode video { mix-blend-mode: screen; opacity:0.85; }
-
-        @keyframes barrel-roll {
-            0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}
-        }
-        .vtile.barrel-rolling { animation: barrel-roll 0.7s ease-in-out !important; }
-
-        @keyframes spring-compress {
-            0%{transform:scaleY(1) scaleX(1)}
-            30%{transform:scaleY(0.45) scaleX(1.4) translateY(15%)}
-            60%{transform:scaleY(1.15) scaleX(0.9) translateY(-3%)}
-            80%{transform:scaleY(0.95) scaleX(1.03)}
-            100%{transform:scaleY(1) scaleX(1)}
-        }
-        .vtile.spring-bouncing { animation: spring-compress 0.85s cubic-bezier(0.36,0.07,0.19,0.97) !important; }
 
         /* ── SIDEBAR ── */
         .sidebar {
@@ -299,6 +294,7 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             border:1px solid rgba(255,255,255,0.1);
             border-radius:20px; color:white; font-size:13px; outline:none;
         }
+        .chat-input input::placeholder { color: #555; }
         .chat-input button { width:34px; height:34px; background:#1877f2; border:none; border-radius:50%; color:white; cursor:pointer; font-size:16px; }
         .people-list { flex:1; overflow-y:auto; padding:9px; }
         .person { display:flex; align-items:center; gap:9px; padding:9px; background:rgba(255,255,255,0.05); border-radius:9px; margin-bottom:5px; }
@@ -334,13 +330,15 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
         .toggle-label { font-size:9px; color:#888; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; }
 
         .toggle-pill {
-            height:36px; min-width:78px; padding:0 12px;
-            border-radius:18px; border:none; cursor:pointer;
-            font-size:13px; font-weight:700;
+            height:38px; min-width:86px; padding:0 14px;
+            border-radius:19px; border:none; cursor:pointer;
+            font-size:13px; font-weight:600;
             transition:background 0.2s, box-shadow 0.2s;
-            display:flex; align-items:center; justify-content:center;
-            white-space:nowrap; letter-spacing:0.02em;
+            display:flex; align-items:center; justify-content:center; gap:6px;
+            white-space:nowrap; letter-spacing:0.01em;
         }
+        .toggle-pill .pill-emoji { font-size:15px; line-height:1; }
+        .toggle-pill .pill-state { font-size:12px; opacity:0.9; font-weight:700; }
         .toggle-pill.state-on  { background:#1877f2; color:white; box-shadow:0 0 12px rgba(24,119,242,0.5); }
         .toggle-pill.state-off { background:rgba(255,255,255,0.09); color:#999; }
         .toggle-pill.state-screen { background:linear-gradient(135deg,#7c3aed,#4f46e5); color:white; box-shadow:0 0 14px rgba(124,58,237,0.55); }
@@ -348,8 +346,9 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
 
         .end-btn {
             width:48px; height:48px; border-radius:50%; border:none;
-            background:#dc2626; color:white; font-size:20px; cursor:pointer;
+            background:#dc2626; color:white; font-size:18px; cursor:pointer;
             display:flex; align-items:center; justify-content:center; flex-shrink:0;
+            transition: background .15s;
         }
         .end-btn:hover { background:#b91c1c; }
 
@@ -362,8 +361,9 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             .sidebar { display:none !important; }
             .mobile-drawer-btn { display:flex; flex-direction:column; align-items:center; gap:3px; }
             .controls { gap:8px; padding:8px 8px; padding-bottom:max(12px,env(safe-area-inset-bottom)); flex-wrap:nowrap; }
-            .toggle-pill { height:34px; min-width:62px; font-size:12px; padding:0 8px; }
-            .end-btn { width:42px; height:42px; font-size:18px; }
+            .toggle-pill { height:34px; min-width:66px; font-size:11px; padding:0 8px; gap:4px; }
+            .toggle-pill .pill-emoji { font-size:14px; }
+            .end-btn { width:42px; height:42px; font-size:16px; }
             .top-name { display:none; }
             .topbar { padding:8px 12px; padding-top:max(8px,env(safe-area-inset-top)); }
 
@@ -446,7 +446,7 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
     </div>
 </div>
 
-<!-- Per-tile fullscreen overlay (single shared, content swapped in) -->
+<!-- Per-tile fullscreen overlay -->
 <div class="tile-fs-wrap" id="tileFsWrap">
     <button class="tile-fs-close" id="tileFsClose">✕</button>
     <video id="tileFsVideo" autoplay playsinline muted></video>
@@ -478,13 +478,13 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
             <div class="panel active" id="chatPanel">
                 <div class="cmd-hint">
                     <b>Fun commands:</b><br>
-                    🎉 <b>/party</b> — rainbow backgrounds for all<br>
-                    🔄 <b>/barrelroll</b> — everyone does a 360<br>
-                    🌀 <b>/spring</b> — everyone bounces
+                    /confetti — shoots confetti for everyone<br>
+                    /barrelroll — everyone does a 360<br>
+                    /spring — everyone bounces
                 </div>
                 <div class="chat-msgs" id="chatMsgs"></div>
                 <div class="chat-input">
-                    <input id="chatIn" type="text" placeholder="Message or /party ...">
+                    <input id="chatIn" type="text" placeholder="Message...">
                     <button id="sendBtn">➤</button>
                 </div>
             </div>
@@ -497,20 +497,28 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
     <div class="controls">
         <div class="toggle-group">
             <span class="toggle-label">Mic</span>
-            <button class="toggle-pill state-on" id="micBtn">Mic ON</button>
+            <button class="toggle-pill state-on" id="micBtn">
+                <span class="pill-emoji">🎙️</span><span class="pill-state" id="micState">ON</span>
+            </button>
         </div>
         <div class="toggle-group">
             <span class="toggle-label">Camera</span>
-            <button class="toggle-pill state-off" id="camBtn">Cam OFF</button>
+            <button class="toggle-pill state-off" id="camBtn">
+                <span class="pill-emoji">📷</span><span class="pill-state" id="camState">OFF</span>
+            </button>
         </div>
         <div class="toggle-group" id="screenToggleGroup">
             <span class="toggle-label">Screen</span>
-            <button class="toggle-pill state-off" id="screenBtn">Share</button>
+            <button class="toggle-pill state-off" id="screenBtn">
+                <span class="pill-emoji">🖥️</span><span class="pill-state" id="screenState">Share</span>
+            </button>
         </div>
-        <button class="end-btn" id="endBtn" title="Leave">📵</button>
+        <button class="end-btn" id="endBtn" title="Leave call">✕</button>
         <div class="toggle-group mobile-drawer-btn">
             <span class="toggle-label">Chat</span>
-            <button class="toggle-pill state-off" id="drawerToggleBtn">💬 Chat</button>
+            <button class="toggle-pill state-off" id="drawerToggleBtn">
+                <span class="pill-emoji">💬</span><span class="pill-state">Chat</span>
+            </button>
         </div>
     </div>
 </div>
@@ -525,11 +533,11 @@ cat > /mnt/user-data/outputs/homie_chat_v3.html << 'ENDOFFILE'
     </div>
     <div class="drawer-panel active" id="drawerChatPanel">
         <div class="cmd-hint" style="margin:6px 9px;">
-            <b>Fun commands:</b> /party 🎉 &nbsp; /barrelroll 🔄 &nbsp; /spring 🌀
+            <b>Fun commands:</b> /confetti &nbsp; /barrelroll &nbsp; /spring
         </div>
         <div class="chat-msgs" id="drawerChatMsgs"></div>
         <div class="chat-input">
-            <input id="drawerChatIn" type="text" placeholder="Message or /party ...">
+            <input id="drawerChatIn" type="text" placeholder="Message...">
             <button id="drawerSendBtn">➤</button>
         </div>
     </div>
@@ -610,8 +618,18 @@ let audioCtx=null, audioMixer=null, micSource=null, screenAudioSource=null, mixe
 let participants={}, connections={}, hostConn=null, hostLastPing=0;
 let heartbeatSendTimer=null, heartbeatCheckTimer=null, takeoverTimer=null;
 
-// Video health watchdog
-let videoWatchdogTimer = null;
+// Camera recovery state
+let camRecoveryTimer=null;
+let camRecoveryAttempts=0;
+const CAM_RECOVERY_MAX=8;
+const CAM_RECOVERY_INTERVALS=[2000,3000,5000,8000,12000,20000,30000,60000];
+let camIsRecovering=false;
+
+// Video watchdog
+let videoWatchdogTimer=null;
+
+// Track health per remote peer
+const trackHealth={}; // peerId -> {lastFrameTime, frozen, stallCount}
 
 // ─────────────────────────────────────────────
 // UTILS
@@ -681,14 +699,14 @@ function showLoggedIn(username,picUrl){
     qs('signupPanel').classList.add('hidden');
     qs('loginPanel').classList.add('hidden');
     qs('authMain').style.display='block';
-    qs('authWrap').style.display='block';
+    qs('authWrap').style.display='flex';
     qs('app').style.display='none';
 }
 function showLoggedOut(){
     qs('authBtns').classList.remove('hidden');
     qs('userDisplay').classList.add('hidden');
     qs('authMain').style.display='block';
-    qs('authWrap').style.display='block';
+    qs('authWrap').style.display='flex';
     qs('app').style.display='none';
     if(!lastBannedUser) hideBanUI();
 }
@@ -730,7 +748,7 @@ qs('joinBtn').onclick=async()=>{
     if(!currentUser) return;
     qs('authWrap').style.display='none';
     qs('app').style.display='flex';
-    if(!screenShareSupported){qs('screenBtn').classList.add('state-disabled');qs('screenBtn').disabled=true;qs('screenBtn').textContent=isIOS?'iOS N/A':'N/A';}
+    if(!screenShareSupported){qs('screenBtn').classList.add('state-disabled');qs('screenBtn').disabled=true;qs('screenState').textContent=isIOS?'iOS N/A':'N/A';}
     await initMedia();
 };
 
@@ -741,7 +759,6 @@ async function initMedia(){
     hasVideoPermission=false; localStream=null; originalMicTrack=null;
     const audioCfg={echoCancellation:true,noiseSuppression:true,autoGainControl:true};
 
-    // Try video + audio, with mobile fallback chain
     const attempts=[
         {audio:audioCfg, video:isMobile?{facingMode:'user'}:true},
         {audio:audioCfg, video:true},
@@ -772,8 +789,60 @@ async function initMedia(){
 }
 
 // ─────────────────────────────────────────────
-// VIDEO WATCHDOG — constantly monitors and repairs broken video
-// This is the "extremely smart" auto-healer
+// CAMERA RECOVERY — persistent auto-heal for local camera
+// ─────────────────────────────────────────────
+function startCamRecovery(){
+    if(camIsRecovering||camRecoveryTimer) return;
+    if(camRecoveryAttempts>=CAM_RECOVERY_MAX){
+        console.warn('[camRecovery] Max attempts reached, giving up');
+        camOn=false;
+        if(participants[myPeerId]) participants[myPeerId].hasVideo=false;
+        updateCtrlBtns();renderAll();
+        const pkt={type:'cam-status',hasVideo:false};
+        if(isHost)broadcastAll({...pkt,id:HOST_ID});else if(hostConn?.open)hostConn.send(pkt);
+        return;
+    }
+    camIsRecovering=true;
+    const delay=CAM_RECOVERY_INTERVALS[Math.min(camRecoveryAttempts,CAM_RECOVERY_INTERVALS.length-1)];
+    console.log(`[camRecovery] attempt ${camRecoveryAttempts+1} in ${delay}ms`);
+    camRecoveryTimer=setTimeout(async()=>{
+        camRecoveryTimer=null;
+        camIsRecovering=false;
+        if(!camOn||screenOn||!localStream) return; // no longer needed
+        camRecoveryAttempts++;
+        try{
+            let s;
+            try{s=await navigator.mediaDevices.getUserMedia({video:isMobile?{facingMode:'user'}:true,audio:false});}
+            catch(e){s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});}
+            const t=s.getVideoTracks()[0];
+            if(!t) throw new Error('no track');
+            // Remove old dead tracks
+            localStream.getVideoTracks().forEach(old=>{localStream.removeTrack(old);old.stop();});
+            localStream.addTrack(t);
+            t.enabled=true;
+            replaceTrackInPeers(t,'video');
+            setTimeout(()=>replaceTrackInPeers(t,'video'),400);
+            if(participants[myPeerId]){participants[myPeerId].hasVideo=true;participants[myPeerId].stream=localStream;}
+            camRecoveryAttempts=0; // success — reset counter
+            renderAll();updateCtrlBtns();
+            console.log('[camRecovery] Camera restored successfully');
+            const pkt={type:'cam-status',hasVideo:true};
+            if(isHost)broadcastAll({...pkt,id:HOST_ID});else if(hostConn?.open)hostConn.send(pkt);
+        }catch(e){
+            console.warn('[camRecovery] attempt failed:',e.message);
+            startCamRecovery(); // schedule next attempt
+        }
+    }, delay);
+}
+
+function stopCamRecovery(){
+    if(camRecoveryTimer){clearTimeout(camRecoveryTimer);camRecoveryTimer=null;}
+    camIsRecovering=false;
+    camRecoveryAttempts=0;
+}
+
+// ─────────────────────────────────────────────
+// VIDEO WATCHDOG — constantly monitors and repairs
 // ─────────────────────────────────────────────
 function startVideoWatchdog(){
     if(videoWatchdogTimer) clearInterval(videoWatchdogTimer);
@@ -782,82 +851,108 @@ function startVideoWatchdog(){
         const grid=qs('videoGrid');
         if(!grid) return;
 
-        // 1. Check each remote participant's video element
+        // 1. Monitor remote tiles
         grid.querySelectorAll('.vtile[data-peer-id]').forEach(tile=>{
             const pid=tile.dataset.peerId;
             if(!pid||pid===myPeerId) return;
             const p=participants[pid];
-            if(!p||!p.hasVideo||!p.stream) return;
+            if(!p) return;
+            if(!p.hasVideo||!p.stream) return;
 
             const vid=tile.querySelector('video');
-            // If participant should have video but video is stalled/missing, refresh it
             if(!vid){
-                // Re-render to inject a video element
                 upsertParticipant(pid,p.name,p.pic,p.stream,p.muted,p.hasVideo,p.isScreenSharing);
                 return;
             }
-            // Detect frozen/black video: readyState<2 means no data decoded yet
+
+            // Detect frozen/black video using readyState
             if(vid.readyState<2 && !vid.error){
-                // Reassign srcObject to force a re-negotiation on the element level
-                const stream=p.stream;
-                vid.srcObject=null;
-                vid.srcObject=stream;
-                vid.play().catch(()=>{});
+                if(!trackHealth[pid]) trackHealth[pid]={stallCount:0};
+                trackHealth[pid].stallCount=(trackHealth[pid].stallCount||0)+1;
+                if(trackHealth[pid].stallCount>=3){
+                    // Try to unfreeze by reassigning srcObject
+                    vid.srcObject=null;
+                    vid.srcObject=p.stream;
+                    vid.play().catch(()=>{});
+                    trackHealth[pid].stallCount=0;
+                }
+            } else {
+                if(trackHealth[pid]) trackHealth[pid].stallCount=0;
             }
         });
 
-        // 2. Check our own local video if cam is supposed to be on
-        if((camOn||screenOn) && localStream){
+        // 2. Monitor own camera if it should be on
+        if(camOn && !screenOn && localStream){
             const vTracks=localStream.getVideoTracks();
+            const alive=vTracks.some(t=>t.enabled&&t.readyState==='live');
             const myTile=grid.querySelector(`.vtile[data-peer-id="${myPeerId}"]`);
+
             if(myTile){
                 const myVid=myTile.querySelector('video');
+                // Show/hide recovering indicator
+                let rec=myTile.querySelector('.cam-recovering');
+                if(!rec){
+                    rec=document.createElement('div');
+                    rec.className='cam-recovering';
+                    rec.innerHTML='<span class="spin-icon">↻</span> Reconnecting...';
+                    myTile.appendChild(rec);
+                }
+                if(!alive){
+                    rec.classList.add('show');
+                }else{
+                    rec.classList.remove('show');
+                }
                 if(myVid && myVid.readyState<2){
                     myVid.srcObject=null;
                     myVid.srcObject=localStream;
                     myVid.play().catch(()=>{});
                 }
             }
-            // Make sure video tracks are not accidentally ended
-            if(vTracks.length>0 && vTracks.every(t=>t.readyState==='ended') && !screenOn){
-                console.warn('[watchdog] Video tracks ended — attempting recovery');
-                camOn=false;
-                if(participants[myPeerId]) participants[myPeerId].hasVideo=false;
-                updateCtrlBtns();
-                renderAll();
-                const pkt={type:'cam-status',hasVideo:false};
-                if(isHost) broadcastAll({...pkt,id:HOST_ID});
-                else if(hostConn?.open) hostConn.send(pkt);
+
+            // If camera tracks ended and we're supposed to be on, trigger recovery
+            if(vTracks.length===0||(vTracks.length>0&&vTracks.every(t=>t.readyState==='ended'))){
+                if(!camIsRecovering&&!camRecoveryTimer){
+                    console.warn('[watchdog] Camera tracks ended — starting recovery');
+                    startCamRecovery();
+                }
             }
         }
 
-        // 3. Verify all peer connections still have correct tracks
+        // 3. Fix own video if screen-sharing but tile shows nothing
+        if(screenOn && localStream){
+            const vTracks=localStream.getVideoTracks();
+            if(vTracks.length>0&&vTracks.every(t=>t.readyState==='ended')){
+                // Screen share died unexpectedly
+                stopScreenShare();
+            }
+        }
+
+        // 4. Repair dead senders in peer connections
         if(peer && localStream){
-            const vTrack=localStream.getVideoTracks().find(t=>t.enabled && t.readyState==='live');
+            const vTrack=localStream.getVideoTracks().find(t=>t.enabled&&t.readyState==='live');
             const aTrack=localStream.getAudioTracks().find(t=>t.readyState==='live');
             Object.values(peer.connections).forEach(arr=>{
                 if(!Array.isArray(arr)) return;
                 arr.forEach(conn=>{
                     if(conn.type!=='media'||!conn.peerConnection) return;
                     const pc=conn.peerConnection;
-                    if(pc.connectionState==='failed'||pc.connectionState==='disconnected'){
-                        console.warn('[watchdog] PeerConnection in bad state:',pc.connectionState);
-                        // Can't easily restart from here but log it
-                    }
                     const senders=pc.getSenders();
                     senders.forEach(s=>{
                         if(s.track&&s.track.readyState==='ended'){
-                            // Dead track in a sender — replace it
                             const replacement=s.track.kind==='video'?vTrack:aTrack;
-                            if(replacement){
-                                s.replaceTrack(replacement).catch(()=>{});
-                            }
+                            if(replacement) s.replaceTrack(replacement).catch(()=>{});
                         }
                     });
                 });
             });
         }
-    }, 2000); // check every 2s
+
+        // 5. Ensure audio is playing for all remote participants
+        Object.entries(participants).forEach(([id,p])=>{
+            if(id===myPeerId||!p.stream) return;
+            ensureAudioPlaying(p.stream,id);
+        });
+    }, 2000);
 }
 
 function stopVideoWatchdog(){
@@ -947,8 +1042,7 @@ function joinAsGuest(){
 }
 
 // ─────────────────────────────────────────────
-// AUDIO — echo fixed: video elements always muted,
-// audio handled by dedicated hidden <audio> elements only
+// AUDIO — echo-safe: video elements always muted
 // ─────────────────────────────────────────────
 const audioElements={};
 function ensureAudioPlaying(stream,peerId){
@@ -1075,7 +1169,7 @@ function pushOnlineCount(){
 }
 
 // ─────────────────────────────────────────────
-// PER-TILE ZOOM (fullscreen overlay)
+// PER-TILE ZOOM
 // ─────────────────────────────────────────────
 let tileFsPeerId=null;
 let tileFsAudioEl=null;
@@ -1096,26 +1190,16 @@ function openTileFs(peerId){
 
     if(showVid && stream){
         vidEl.srcObject=stream;
-        vidEl.muted=true; // no echo — audio via separate element below
+        vidEl.muted=true;
         vidEl.style.display='block';
         ovEl.classList.add('hidden');
         vidEl.play().catch(()=>{});
-        // Separate audio for remote participants
         if(!isMe){
-            if(!tileFsAudioEl){
-                tileFsAudioEl=document.createElement('audio');
-                tileFsAudioEl.autoplay=true;tileFsAudioEl.playsInline=true;
-                tileFsAudioEl.style.display='none';
-                document.body.appendChild(tileFsAudioEl);
-            }
-            if(tileFsAudioEl.srcObject!==stream){
-                tileFsAudioEl.srcObject=stream;
-                tileFsAudioEl.play().catch(()=>{});
-            }
+            if(!tileFsAudioEl){tileFsAudioEl=document.createElement('audio');tileFsAudioEl.autoplay=true;tileFsAudioEl.playsInline=true;tileFsAudioEl.style.display='none';document.body.appendChild(tileFsAudioEl);}
+            if(tileFsAudioEl.srcObject!==stream){tileFsAudioEl.srcObject=stream;tileFsAudioEl.play().catch(()=>{});}
         }
     }else{
-        vidEl.srcObject=null;
-        vidEl.style.display='none';
+        vidEl.srcObject=null;vidEl.style.display='none';
         qs('tileFsImg').src=isMe?myPicUrl:(p.pic||PICS[0]);
         qs('tileFsName2').textContent=p.name+(isMe?' (you)':'');
         ovEl.classList.remove('hidden');
@@ -1125,15 +1209,85 @@ function openTileFs(peerId){
 
 function closeTileFs(){
     qs('tileFsWrap').classList.remove('open');
-    const vid=qs('tileFsVideo');
-    vid.srcObject=null;
-    if(tileFsAudioEl){tileFsAudioEl.srcObject=null;}
+    qs('tileFsVideo').srcObject=null;
+    if(tileFsAudioEl) tileFsAudioEl.srcObject=null;
     tileFsPeerId=null;
 }
 
 qs('tileFsClose').onclick=closeTileFs;
-qs('tileFsWrap').addEventListener('keydown',e=>{if(e.key==='Escape')closeTileFs();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&tileFsPeerId)closeTileFs();});
+
+// ─────────────────────────────────────────────
+// CONFETTI ENGINE
+// ─────────────────────────────────────────────
+const confettiColors=['#f94144','#f3722c','#f8961e','#f9c74f','#90be6d','#43aa8b','#577590','#e63946','#a8dadc','#457b9d','#e9c46a','#f4a261'];
+
+function launchConfettiOnTile(tile){
+    // Remove existing canvas if any
+    const existing=tile.querySelector('.confetti-canvas');
+    if(existing) existing.remove();
+
+    const canvas=document.createElement('canvas');
+    canvas.className='confetti-canvas';
+    canvas.width=tile.offsetWidth||300;
+    canvas.height=tile.offsetHeight||200;
+    tile.appendChild(canvas);
+
+    const ctx=canvas.getContext('2d');
+    const particles=[];
+    const COUNT=60;
+
+    for(let i=0;i<COUNT;i++){
+        particles.push({
+            x: canvas.width*(0.1+Math.random()*0.8),
+            y: canvas.height+10,
+            vx: (Math.random()-0.5)*6,
+            vy: -(6+Math.random()*8),
+            rot: Math.random()*360,
+            rotV: (Math.random()-0.5)*12,
+            w: 7+Math.random()*7,
+            h: 4+Math.random()*4,
+            color: confettiColors[Math.floor(Math.random()*confettiColors.length)],
+            shape: Math.random()<0.5?'rect':'circle',
+            gravity: 0.25+Math.random()*0.15,
+            alpha: 1
+        });
+    }
+
+    let frame=0;
+    const MAX_FRAMES=140;
+
+    function animate(){
+        if(frame>=MAX_FRAMES){canvas.remove();return;}
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        particles.forEach(p=>{
+            p.x+=p.vx;
+            p.y+=p.vy;
+            p.vy+=p.gravity;
+            p.vx*=0.99;
+            p.rot+=p.rotV;
+            if(frame>MAX_FRAMES*0.6) p.alpha=Math.max(0,p.alpha-0.025);
+            ctx.save();
+            ctx.globalAlpha=p.alpha;
+            ctx.translate(p.x,p.y);
+            ctx.rotate(p.rot*Math.PI/180);
+            ctx.fillStyle=p.color;
+            if(p.shape==='circle'){
+                ctx.beginPath();ctx.arc(0,0,p.w/2,0,Math.PI*2);ctx.fill();
+            }else{
+                ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+            }
+            ctx.restore();
+        });
+        frame++;
+        requestAnimationFrame(animate);
+    }
+    animate();
+}
+
+function launchConfettiOnAllTiles(){
+    document.querySelectorAll('.vtile').forEach(tile=>launchConfettiOnTile(tile));
+}
 
 // ─────────────────────────────────────────────
 // GRID LAYOUT
@@ -1197,7 +1351,7 @@ function renderAll(){
         if(showVid){
             const vid=document.createElement('video');
             vid.autoplay=true;vid.playsInline=true;
-            vid.muted=true; // ALWAYS muted — audio via <audio> elements only (fixes echo)
+            vid.muted=true;
             vid.srcObject=isMe?localStream:p.stream;
             vid.onloadedmetadata=()=>vid.play().catch(()=>{});
             tile.appendChild(vid);
@@ -1215,7 +1369,7 @@ function renderAll(){
         // Screen badge
         const sb=document.createElement('div');
         sb.className='screen-badge'+(isSharing?' show':'');
-        sb.innerHTML='🖥️ Screen';
+        sb.textContent='Screen';
         tile.appendChild(sb);
 
         // Name label
@@ -1231,7 +1385,15 @@ function renderAll(){
         mb.textContent='🔇';
         tile.appendChild(mb);
 
-        // Zoom button (⛶)
+        // Cam recovering indicator (only for self)
+        if(isMe){
+            const rec=document.createElement('div');
+            rec.className='cam-recovering'+(camIsRecovering?' show':'');
+            rec.innerHTML='<span class="spin-icon">↻</span> Reconnecting...';
+            tile.appendChild(rec);
+        }
+
+        // Zoom button
         const zb=document.createElement('button');
         zb.className='zoom-btn';
         zb.title='View fullscreen';
@@ -1248,14 +1410,13 @@ function renderAll(){
             const pimg=document.createElement('img');
             pimg.src=isMe?myPicUrl:(p.pic||PICS[0]);pimg.onerror=()=>pimg.src=PICS[0];
             const pn=document.createElement('span');pn.className='person-name';
-            pn.textContent=p.name+(isMe?' (you)':'')+(isSharing?' 🖥️':'');
+            pn.textContent=p.name+(isMe?' (you)':'')+(isSharing?' [Screen]':'');
             pi.append(pimg,pn);return pi;
         }
         plist.appendChild(makePerson());
         dplist.appendChild(makePerson());
     });
 
-    // Update fs overlay if open
     if(tileFsPeerId && participants[tileFsPeerId]){
         openTileFs(tileFsPeerId);
     }
@@ -1266,27 +1427,48 @@ window.addEventListener('resize',()=>{if(qs('app').style.display!=='none')render
 // FUN EFFECTS
 // ─────────────────────────────────────────────
 const EFFECTS={
-    '/party':   {cls:'party-mode',   dur:5000, label:'🎉 Party mode!',    emoji:'🎉'},
-    '/barrelroll':{cls:'barrel-rolling',dur:700,label:'🔄 Barrel roll!',   emoji:'🔄'},
-    '/spring':  {cls:'spring-bouncing',dur:850, label:'🌀 Boing!',         emoji:'🌀'},
+    '/confetti':    {type:'confetti', label:'Confetti launched'},
+    '/barrelroll':  {cls:'barrel-rolling', dur:700,  label:'Barrel roll'},
+    '/spring':      {cls:'spring-bouncing',dur:850,  label:'Boing'},
 };
 
-function applyFunEffect(cmd, senderName){
+// CSS animations injected once
+(function injectAnimCSS(){
+    const s=document.createElement('style');
+    s.textContent=`
+    @keyframes barrel-roll{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+    .barrel-rolling{animation:barrel-roll 0.7s ease-in-out !important;}
+    @keyframes spring-compress{
+        0%{transform:scaleY(1) scaleX(1)}
+        30%{transform:scaleY(0.45) scaleX(1.4) translateY(15%)}
+        60%{transform:scaleY(1.15) scaleX(0.9) translateY(-3%)}
+        80%{transform:scaleY(0.95) scaleX(1.03)}
+        100%{transform:scaleY(1) scaleX(1)}
+    }
+    .spring-bouncing{animation:spring-compress 0.85s cubic-bezier(0.36,0.07,0.19,0.97) !important;}
+    `;
+    document.head.appendChild(s);
+})();
+
+function applyFunEffect(cmd,senderName){
     const ef=EFFECTS[cmd]; if(!ef) return;
-    addCmdMsg(`${senderName} used ${ef.emoji} ${cmd}`);
+    addCmdMsg(`${senderName} used ${cmd}`);
+    if(ef.type==='confetti'){
+        launchConfettiOnAllTiles();
+        return;
+    }
     const tiles=document.querySelectorAll('.vtile');
     tiles.forEach(tile=>{
         tile.classList.remove(ef.cls);
-        void tile.offsetWidth; // reflow to restart animation
+        void tile.offsetWidth;
         tile.classList.add(ef.cls);
         setTimeout(()=>tile.classList.remove(ef.cls), ef.dur);
     });
-    toast(ef.label);
 }
 
 function sendFunEffect(cmd){
     const ef=EFFECTS[cmd]; if(!ef) return;
-    applyFunEffect(cmd, myName);
+    applyFunEffect(cmd,myName);
     const pkt={type:'fun-effect',effect:cmd,senderName:myName};
     if(isHost) broadcastAll(pkt);
     else if(hostConn?.open) hostConn.send(pkt);
@@ -1305,7 +1487,7 @@ function addMsg(name,text,time,isMe){
     const c2=qs('drawerChatMsgs');c2.appendChild(make());c2.scrollTop=c2.scrollHeight;
 }
 function addSysMsg(text){
-    function make(){const d=document.createElement('div');d.className='msg sys';d.innerHTML=`<div class="msg-body">&#x2014; ${esc(text)}</div>`;return d;}
+    function make(){const d=document.createElement('div');d.className='msg sys';d.innerHTML=`<div class="msg-body">— ${esc(text)}</div>`;return d;}
     const c1=qs('chatMsgs');c1.appendChild(make());c1.scrollTop=c1.scrollHeight;
     const c2=qs('drawerChatMsgs');c2.appendChild(make());c2.scrollTop=c2.scrollHeight;
 }
@@ -1320,7 +1502,6 @@ function sendChat(){
     const inp=mob?qs('drawerChatIn'):qs('chatIn');
     const text=inp.value.trim();if(!text) return;
     inp.value='';
-    // Check for fun commands
     const cmd=text.trim().toLowerCase();
     if(EFFECTS[cmd]){sendFunEffect(cmd);return;}
     const time=hhmm();
@@ -1362,36 +1543,51 @@ function toggleMic(){
     }
     if(participants[myPeerId]) participants[myPeerId].muted=!micOn;
     renderAll();updateCtrlBtns();
-    toast(micOn?'Mic ON':'Mic OFF');
     const pkt={type:'mute-status',muted:!micOn};
     if(isHost) broadcastAll({...pkt,id:HOST_ID});
     else if(hostConn?.open) hostConn.send(pkt);
 }
 
 // ─────────────────────────────────────────────
-// CAMERA TOGGLE — with immediate track repair
+// CAMERA TOGGLE
 // ─────────────────────────────────────────────
 async function toggleCam(){
     if(screenOn){toast('Stop screen sharing first');return;}
     if(!hasVideoPermission){toast('Camera not available');return;}
-    const vTracks=localStream?localStream.getVideoTracks():[];
-    if(vTracks.length===0||vTracks.every(t=>t.readyState==='ended')){
-        // Get a fresh camera track
-        try{
-            let s;
-            try{s=await navigator.mediaDevices.getUserMedia({video:isMobile?{facingMode:'user'}:true,audio:false});}
-            catch(e){s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});}
-            const t=s.getVideoTracks()[0];
-            if(t){localStream.getVideoTracks().forEach(old=>{localStream.removeTrack(old);old.stop();});localStream.addTrack(t);t.enabled=true;camOn=true;replaceTrackInPeers(t,'video');setTimeout(()=>replaceTrackInPeers(t,'video'),400);}
-        }catch(e){toast('Camera error: '+e.message);return;}
+
+    if(!camOn){
+        // Turning camera ON
+        stopCamRecovery();
+        const vTracks=localStream?localStream.getVideoTracks():[];
+        const needNewTrack=vTracks.length===0||vTracks.every(t=>t.readyState==='ended');
+        if(needNewTrack){
+            try{
+                let s;
+                try{s=await navigator.mediaDevices.getUserMedia({video:isMobile?{facingMode:'user'}:true,audio:false});}
+                catch(e){s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});}
+                const t=s.getVideoTracks()[0];
+                if(!t) throw new Error('no video track');
+                localStream.getVideoTracks().forEach(old=>{localStream.removeTrack(old);old.stop();});
+                localStream.addTrack(t);t.enabled=true;
+                replaceTrackInPeers(t,'video');
+                setTimeout(()=>replaceTrackInPeers(t,'video'),400);
+                camOn=true;
+            }catch(e){toast('Camera error: '+e.message);return;}
+        }else{
+            vTracks.forEach(t=>{t.enabled=true;});
+            const t=vTracks.find(t=>t.readyState==='live');
+            if(t){replaceTrackInPeers(t,'video');setTimeout(()=>replaceTrackInPeers(t,'video'),400);}
+            camOn=true;
+        }
     }else{
-        camOn=!camOn;
-        vTracks.forEach(t=>{t.enabled=camOn;});
-        if(camOn){const t=vTracks.find(t=>t.readyState==='live');if(t){replaceTrackInPeers(t,'video');setTimeout(()=>replaceTrackInPeers(t,'video'),400);}}
+        // Turning camera OFF
+        stopCamRecovery();
+        camOn=false;
+        localStream.getVideoTracks().forEach(t=>{t.enabled=false;});
     }
+
     if(participants[myPeerId]){participants[myPeerId].hasVideo=camOn;participants[myPeerId].stream=localStream;}
     renderAll();updateCtrlBtns();
-    toast(camOn?'Camera ON':'Camera OFF');
     const pkt={type:'cam-status',hasVideo:camOn};
     if(isHost) broadcastAll({...pkt,id:HOST_ID});
     else if(hostConn?.open) hostConn.send(pkt);
@@ -1454,7 +1650,6 @@ async function stopScreenShare(){
     }else{
         try{const fa=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});const nm=fa.getAudioTracks()[0];if(nm){originalMicTrack=nm;nm.enabled=micOn;localStream.addTrack(nm);replaceTrackInPeers(nm,'audio');}}catch(e){}
     }
-    // Restore camera
     localStream.getVideoTracks().forEach(t=>localStream.removeTrack(t));
     if(hasVideoPermission){
         try{
@@ -1471,25 +1666,25 @@ async function stopScreenShare(){
 function broadcastScreenStatus(v){const pkt={type:'screen-status',isScreenSharing:v};if(isHost)broadcastAll({...pkt,id:HOST_ID});else if(hostConn?.open)hostConn.send(pkt);}
 
 // ─────────────────────────────────────────────
-// CONTROLS UPDATE — text only
+// CONTROLS UPDATE
 // ─────────────────────────────────────────────
 function updateCtrlBtns(){
     const m=qs('micBtn'),c=qs('camBtn'),s=qs('screenBtn');
     m.className='toggle-pill '+(micOn?'state-on':'state-off');
-    m.textContent=micOn?'Mic ON':'Mic OFF';
+    qs('micState').textContent=micOn?'ON':'OFF';
     const ca=camOn&&!screenOn;
     c.className='toggle-pill '+(ca?'state-on':'state-off');
-    c.textContent=ca?'Cam ON':'Cam OFF';
-    if(!screenShareSupported){s.className='toggle-pill state-disabled';s.textContent='N/A';}
-    else if(screenOn){s.className='toggle-pill state-screen';s.textContent='Stop Screen';}
-    else{s.className='toggle-pill state-off';s.textContent='Share';}
+    qs('camState').textContent=ca?'ON':'OFF';
+    if(!screenShareSupported){s.className='toggle-pill state-disabled';qs('screenState').textContent='N/A';}
+    else if(screenOn){s.className='toggle-pill state-screen';qs('screenState').textContent='Stop';}
+    else{s.className='toggle-pill state-off';qs('screenState').textContent='Share';}
 }
 
 // ─────────────────────────────────────────────
 // EXIT
 // ─────────────────────────────────────────────
 async function exitCall(){
-    closeTileFs();cancelTakeover();stopHeartbeat();stopVideoWatchdog();
+    closeTileFs();cancelTakeover();stopHeartbeat();stopVideoWatchdog();stopCamRecovery();
     if(screenOn){screenOn=false;if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}teardownAudioMixer();}
     if(isHost){db.collection('room').doc('main').set({onlineCount:0},{merge:true}).catch(()=>{});Object.values(connections).forEach(c=>{try{c.call?.close();}catch(e){}try{c.conn?.close();}catch(e){}if(c.relays)Object.values(c.relays).forEach(r=>{try{r.close();}catch(e){}});});}
     else{try{hostConn?.close();}catch(e){}}
@@ -1501,7 +1696,7 @@ async function exitCall(){
     peer=null;hostConn=null;participants={};connections={};
     isHost=false;myPeerId='';micOn=true;camOn=false;hasVideoPermission=false;screenOn=false;screenStream=null;
     qs('chatMsgs').innerHTML='';qs('drawerChatMsgs').innerHTML='';
-    qs('app').style.display='none';qs('authWrap').style.display='block';
+    qs('app').style.display='none';qs('authWrap').style.display='flex';
     updateCtrlBtns();
     if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
 }
@@ -1543,7 +1738,7 @@ document.querySelectorAll('.drawer-tab').forEach(tab=>{
 });
 
 // ─────────────────────────────────────────────
-// WHOLE-APP FULLSCREEN
+// FULLSCREEN
 // ─────────────────────────────────────────────
 qs('fullscreenBtn').onclick=()=>{
     const el=qs('app');
@@ -1556,5 +1751,3 @@ document.addEventListener('webkitfullscreenchange',onFsChange);
 </script>
 </body>
 </html>
-ENDOFFILE
-echo "done: $?"
