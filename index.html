@@ -1223,50 +1223,82 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&tileFsPeerId)closeT
 const confettiColors=['#f94144','#f3722c','#f8961e','#f9c74f','#90be6d','#43aa8b','#577590','#e63946','#a8dadc','#457b9d','#e9c46a','#f4a261'];
 
 function launchConfettiOnTile(tile){
-    // Remove existing canvas if any
     const existing=tile.querySelector('.confetti-canvas');
     if(existing) existing.remove();
 
     const canvas=document.createElement('canvas');
     canvas.className='confetti-canvas';
-    canvas.width=tile.offsetWidth||300;
-    canvas.height=tile.offsetHeight||200;
+    // Always use a large logical size so density is screen-size independent
+    const W=Math.max(tile.offsetWidth||300, 300);
+    const H=Math.max(tile.offsetHeight||200, 200);
+    canvas.width=W;
+    canvas.height=H;
     tile.appendChild(canvas);
 
     const ctx=canvas.getContext('2d');
     const particles=[];
-    const COUNT=60;
 
-    for(let i=0;i<COUNT;i++){
-        particles.push({
-            x: canvas.width*(0.1+Math.random()*0.8),
-            y: canvas.height+10,
-            vx: (Math.random()-0.5)*6,
-            vy: -(6+Math.random()*8),
+    // Fixed count regardless of tile size — 220 pieces per tile
+    const COUNT=220;
+    const MAX_FRAMES=340; // ~5.5s at 60fps
+    const FADE_START=MAX_FRAMES*0.72;
+
+    function makeParticle(delayFrames){
+        // Spread from multiple launch points across bottom
+        const xZone=Math.random();
+        return {
+            x: W*(0.05+xZone*0.9),
+            y: H+8,
+            vx: (Math.random()-0.5)*9,
+            vy: -(9+Math.random()*12),
             rot: Math.random()*360,
-            rotV: (Math.random()-0.5)*12,
-            w: 7+Math.random()*7,
-            h: 4+Math.random()*4,
+            rotV: (Math.random()-0.5)*18,
+            w: 8+Math.random()*9,
+            h: 4+Math.random()*5,
             color: confettiColors[Math.floor(Math.random()*confettiColors.length)],
-            shape: Math.random()<0.5?'rect':'circle',
-            gravity: 0.25+Math.random()*0.15,
-            alpha: 1
-        });
+            shape: Math.random()<0.4?'circle':(Math.random()<0.5?'rect':'ribbon'),
+            gravity: 0.22+Math.random()*0.18,
+            drag: 0.988+Math.random()*0.008,
+            wobble: Math.random()*Math.PI*2,
+            wobbleSpeed: 0.08+Math.random()*0.08,
+            alpha: 1,
+            delay: delayFrames||0
+        };
     }
 
+    // Initial burst
+    for(let i=0;i<COUNT;i++) particles.push(makeParticle(0));
+
+    // Second wave at frame 30
+    let wave2Done=false;
+    // Third wave at frame 70
+    let wave3Done=false;
+
     let frame=0;
-    const MAX_FRAMES=140;
+    let rafId=null;
 
     function animate(){
-        if(frame>=MAX_FRAMES){canvas.remove();return;}
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        particles.forEach(p=>{
+        if(frame>=MAX_FRAMES){canvas.remove();rafId=null;return;}
+
+        // Inject second and third waves
+        if(!wave2Done&&frame>=30){ for(let i=0;i<100;i++) particles.push(makeParticle(0)); wave2Done=true; }
+        if(!wave3Done&&frame>=70){ for(let i=0;i<80;i++) particles.push(makeParticle(0)); wave3Done=true; }
+
+        ctx.clearRect(0,0,W,H);
+
+        for(let i=particles.length-1;i>=0;i--){
+            const p=particles[i];
+            if(p.delay>0){p.delay--;continue;}
             p.x+=p.vx;
             p.y+=p.vy;
             p.vy+=p.gravity;
-            p.vx*=0.99;
+            p.vx*=p.drag;
             p.rot+=p.rotV;
-            if(frame>MAX_FRAMES*0.6) p.alpha=Math.max(0,p.alpha-0.025);
+            p.wobble+=p.wobbleSpeed;
+            // Slight horizontal wobble for ribbon pieces
+            if(p.shape==='ribbon') p.x+=Math.sin(p.wobble)*1.2;
+            if(frame>FADE_START) p.alpha=Math.max(0,p.alpha-(1/(MAX_FRAMES-FADE_START)));
+            if(p.alpha<=0||p.y>H+20){ particles.splice(i,1); continue; }
             ctx.save();
             ctx.globalAlpha=p.alpha;
             ctx.translate(p.x,p.y);
@@ -1274,13 +1306,15 @@ function launchConfettiOnTile(tile){
             ctx.fillStyle=p.color;
             if(p.shape==='circle'){
                 ctx.beginPath();ctx.arc(0,0,p.w/2,0,Math.PI*2);ctx.fill();
+            }else if(p.shape==='ribbon'){
+                ctx.fillRect(-p.w/2,-p.h/4,p.w,p.h/2);
             }else{
                 ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
             }
             ctx.restore();
-        });
+        }
         frame++;
-        requestAnimationFrame(animate);
+        rafId=requestAnimationFrame(animate);
     }
     animate();
 }
