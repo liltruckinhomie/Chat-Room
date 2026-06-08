@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Homie Chat – Video & Chat</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -11,11 +11,18 @@
     <style>
         * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 
+        :root {
+            --ctrl-h: 70px;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #000;
-            height: 100vh;
-            overflow: hidden;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -99,15 +106,26 @@
 
         /* ===== APP ===== */
         #app {
-            display:none; width:100%; height:100%;
-            flex-direction:column; background:#1a1a2e;
-            position:fixed; top:0; left:0; right:0; bottom:0;
+            display: none;
+            width: 100%;
+            /* Use dvh (dynamic viewport height) for mobile — falls back to 100vh */
+            height: 100dvh;
+            height: 100vh; /* fallback */
+            flex-direction: column;
+            background: #1a1a2e;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            /* Respect safe areas (iPhone notch / home bar) */
+            padding-bottom: env(safe-area-inset-bottom, 0px);
         }
+
         .topbar {
             background:#16213e; color:white;
             padding:10px 16px;
+            padding-top: max(10px, env(safe-area-inset-top, 10px));
             display:flex; justify-content:space-between; align-items:center;
             border-bottom:1px solid #2c3e66; flex-shrink:0;
+            z-index: 5;
         }
         .online-pill {
             background:#2c3e66; padding:4px 12px;
@@ -128,13 +146,19 @@
         .fullscreen-btn {
             background:rgba(255,255,255,0.08); border:none;
             width:32px; height:32px; border-radius:7px;
-            color:#ccc; cursor:pointer; font-size:15px;
+            color:#ccc; cursor:pointer; font-size:16px;
             display:flex; align-items:center; justify-content:center;
             transition:background 0.15s;
         }
         .fullscreen-btn:hover { background:rgba(255,255,255,0.16); }
 
-        .app-body { display:flex; flex:1; overflow:hidden; min-height:0; }
+        /* App body fills the space between topbar and controls */
+        .app-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+        }
 
         .video-grid {
             flex: 1;
@@ -157,20 +181,61 @@
             min-height: 0;
             min-width: 0;
             border: 2px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+            transition: border-color 0.15s;
         }
+        .vtile:hover { border-color: rgba(255,255,255,0.3); }
 
-        .vtile.spotlight {
-            border: 2px solid rgba(255,255,255,0.3);
-        }
-
+        .vtile.spotlight { border: 2px solid rgba(255,255,255,0.3); }
         .vtile.screensharing {
             border: 2px solid rgba(124,58,237,0.8);
             box-shadow: 0 0 14px rgba(124,58,237,0.35);
         }
 
+        /* Fullscreen tile overlay */
+        .vtile-fullscreen {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 500 !important;
+            border-radius: 0 !important;
+            border: none !important;
+            background: #000 !important;
+        }
+        .vtile-fullscreen video {
+            object-fit: contain !important;
+        }
+        .vtile-fullscreen .av-overlay img {
+            width: 160px !important;
+            height: 160px !important;
+        }
+        .vtile-fullscreen .name-label {
+            bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
+            left: 16px !important;
+            font-size: 14px !important;
+            padding: 6px 14px !important;
+        }
+        .vtile-fullscreen .fs-exit-hint {
+            display: flex !important;
+        }
+
+        .fs-exit-hint {
+            display: none;
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 4;
+            backdrop-filter: blur(4px);
+            pointer-events: none;
+        }
+
         .vtile video {
             width: 100%; height: 100%;
-            object-fit: contain;
+            object-fit: cover;
             display: block;
             background: #0a0a14;
         }
@@ -269,18 +334,19 @@
         /* ── CONTROLS ── */
         .controls {
             padding: 10px 20px;
-            padding-bottom: max(10px, env(safe-area-inset-bottom));
-            background:#16213e;
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            gap:16px;
-            border-top:1px solid #2c3e66;
-            flex-shrink:0;
+            background: #16213e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            border-top: 1px solid #2c3e66;
+            flex-shrink: 0;
             flex-wrap: wrap;
             position: relative;
             z-index: 10;
+            /* Safe area bottom padding handled by #app padding-bottom */
         }
+
         .toggle-group {
             display:flex; flex-direction:column;
             align-items:center; gap:4px;
@@ -290,11 +356,11 @@
             font-weight:600; letter-spacing:0.05em; text-transform:uppercase;
         }
         .toggle-pill {
-            width:82px; height:36px; border-radius:18px;
+            width:82px; height:38px; border-radius:18px;
             border:none; cursor:pointer;
-            font-size:12px; font-weight:700; letter-spacing:0.04em;
+            font-size:14px; font-weight:700; letter-spacing:0.02em;
             transition:background 0.2s, box-shadow 0.2s;
-            display:flex; align-items:center; justify-content:center; gap:5px;
+            display:flex; align-items:center; justify-content:center; gap:6px;
             white-space:nowrap;
         }
         .toggle-pill.state-on {
@@ -309,32 +375,20 @@
             color:white;
             box-shadow:0 0 14px rgba(124,58,237,0.55);
         }
-        /* ── SVG icon inside pill ── */
-        .toggle-pill svg {
-            width: 14px; height: 14px;
-            flex-shrink: 0;
-            fill: currentColor;
-        }
-        .toggle-pill .pill-dot {
-            width:8px; height:8px; border-radius:50%; transition:background 0.2s;
-        }
-        .toggle-pill.state-on .pill-dot { background:#7dd3fc; }
-        .toggle-pill.state-off .pill-dot { background:#555; }
-        .toggle-pill.state-screen .pill-dot { background:#c4b5fd; }
-
-        .end-btn {
-            width:48px; height:48px; border-radius:50%; border:none;
-            background:#dc2626; color:white; font-size:20px; cursor:pointer;
-            display:flex; align-items:center; justify-content:center;
-            flex-shrink:0;
-        }
-        .end-btn:hover { background:#b91c1c; }
-
-        /* Screen share disabled on iOS */
         .toggle-pill.state-disabled {
             background:rgba(255,255,255,0.04); color:#444;
             cursor:not-allowed; box-shadow:none;
         }
+        .pill-emoji { font-size: 16px; line-height: 1; }
+        .pill-text { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+
+        .end-btn {
+            width:48px; height:48px; border-radius:50%; border:none;
+            background:#dc2626; color:white; font-size:22px; cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            flex-shrink:0;
+        }
+        .end-btn:hover { background:#b91c1c; }
 
         .toast {
             position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
@@ -345,45 +399,51 @@
         }
         .toast.show { opacity:1; }
 
+        /* ── MOBILE DRAWER ── */
         .mobile-drawer-btn { display:none; }
         .mobile-drawer-overlay { display:none; }
         .mobile-drawer { display:none; }
 
         @media (max-width: 700px) {
             .sidebar { display:none !important; }
+
             .mobile-drawer-btn {
                 display:flex; flex-direction:column;
                 align-items:center; gap:4px;
             }
             .controls {
-                padding: 8px 12px;
-                padding-bottom: max(14px, env(safe-area-inset-bottom));
-                gap:10px;
+                padding: 8px 10px 8px;
+                gap: 8px;
             }
-            .toggle-pill { width:68px; height:34px; font-size:11px; }
-            .end-btn { width:44px; height:44px; font-size:18px; }
+            .toggle-pill { width:62px; height:36px; font-size:13px; gap:4px; }
+            .pill-text { font-size: 10px; }
+            .end-btn { width:44px; height:44px; font-size:20px; }
+
             .mobile-drawer-overlay {
-                display:block;
-                position:fixed; inset:0;
-                background:rgba(0,0,0,0.55);
-                z-index:200;
-                opacity:0; pointer-events:none;
-                transition:opacity 0.22s;
+                display: block;
+                position: fixed; inset: 0;
+                background: rgba(0,0,0,0.55);
+                z-index: 200;
+                opacity: 0; pointer-events: none;
+                transition: opacity 0.22s;
             }
             .mobile-drawer-overlay.open { opacity:1; pointer-events:all; }
+
             .mobile-drawer {
-                display:flex; flex-direction:column;
-                position:fixed; bottom:0; left:0; right:0;
-                height:72vh;
-                background:#16213e;
-                border-radius:18px 18px 0 0;
-                border-top:1px solid #2c3e66;
-                z-index:201;
-                transform:translateY(100%);
-                transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);
-                padding-bottom: env(safe-area-inset-bottom);
+                display: flex; flex-direction: column;
+                position: fixed; bottom: 0; left: 0; right: 0;
+                height: 72vh;
+                background: #16213e;
+                border-radius: 18px 18px 0 0;
+                border-top: 1px solid #2c3e66;
+                z-index: 201;
+                transform: translateY(100%);
+                transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+                /* Safe area padding */
+                padding-bottom: env(safe-area-inset-bottom, 0px);
             }
-            .mobile-drawer.open { transform:translateY(0); }
+            .mobile-drawer.open { transform: translateY(0); }
+
             .drawer-handle {
                 width:38px; height:4px; background:#444;
                 border-radius:2px; margin:10px auto 0; flex-shrink:0;
@@ -404,64 +464,16 @@
             .drawer-tab.active { color:#60a5fa; border-bottom:2px solid #60a5fa; }
             .drawer-panel { display:none; flex:1; overflow:hidden; flex-direction:column; min-height:0; }
             .drawer-panel.active { display:flex; }
+
             .top-name { display:none; }
             .topbar { padding:8px 12px; }
+
+            .vtile .av-overlay img { width:56px; height:56px; }
+            .vtile .av-overlay span { font-size:11px; }
         }
     </style>
 </head>
 <body>
-
-<!-- ── SVG ICON SPRITE (no emoji, renders everywhere) ── -->
-<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
-  <!-- mic on -->
-  <symbol id="ic-mic" viewBox="0 0 24 24">
-    <path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 19.93V22h2v-1.07A8 8 0 0 0 20 13h-2a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93z"/>
-  </symbol>
-  <!-- mic off / slash -->
-  <symbol id="ic-mic-off" viewBox="0 0 24 24">
-    <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-2.21-1.79-4-4-4-1.48 0-2.77.81-3.46 2l1.46 1.46c.28-.62.89-1.06 1.6-1.06 1.1 0 2 .9 2 2v.84l5.6 5.6c.01-.1.02-.2.02-.3M4.27 3L3 4.27l6.01 6.01V11c0 2.21 1.79 4 4 4 .21 0 .39-.02.59-.05l1.62 1.62c-.7.3-1.44.49-2.21.49-2.76 0-5.3-2.1-5.3-5.5H6c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
-  </symbol>
-  <!-- camera on -->
-  <symbol id="ic-cam" viewBox="0 0 24 24">
-    <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
-  </symbol>
-  <!-- camera off -->
-  <symbol id="ic-cam-off" viewBox="0 0 24 24">
-    <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"/>
-  </symbol>
-  <!-- screen share -->
-  <symbol id="ic-screen" viewBox="0 0 24 24">
-    <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zm-9-1v-5.5L7 15l-1.41-1.41L9.17 10H3V8h6.17L5.59 4.41 7 3l4 4v-5.5h2V18h-2z"/>
-  </symbol>
-  <!-- screen stop -->
-  <symbol id="ic-screen-stop" viewBox="0 0 24 24">
-    <path d="M21.79 18.79L20 17H20c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H6.21L4.21 2 2.79 3.41 20.38 21 21.79 18.79zM4 6.21V15c0 1.1.9 2 2 2h14l-2-2H6V8.21l-2-2zM0 20v2h24v-2H0z"/>
-  </symbol>
-  <!-- chat bubble -->
-  <symbol id="ic-chat" viewBox="0 0 24 24">
-    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-  </symbol>
-  <!-- send arrow -->
-  <symbol id="ic-send" viewBox="0 0 24 24">
-    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-  </symbol>
-  <!-- phone hang up -->
-  <symbol id="ic-end" viewBox="0 0 24 24">
-    <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
-  </symbol>
-  <!-- fullscreen expand -->
-  <symbol id="ic-fullscreen" viewBox="0 0 24 24">
-    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-  </symbol>
-  <!-- fullscreen exit -->
-  <symbol id="ic-fullscreen-exit" viewBox="0 0 24 24">
-    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
-  </symbol>
-  <!-- muted indicator -->
-  <symbol id="ic-muted" viewBox="0 0 24 24">
-    <path d="M16.5 12A4.5 4.5 0 0 0 14 7.97V9.8l2.45 2.45c.03-.08.05-.16.05-.25zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
-  </symbol>
-</svg>
 
 <div id="authWrap">
     <div class="auth-container" id="authMain">
@@ -514,9 +526,7 @@
         <div class="topbar-right">
             <img id="topAvatar" class="top-avatar" src="">
             <span id="topName" class="top-name"></span>
-            <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">
-                <svg><use href="#ic-fullscreen"/></svg>
-            </button>
+            <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
         </div>
     </div>
     <div class="app-body">
@@ -530,9 +540,7 @@
                 <div class="chat-msgs" id="chatMsgs"></div>
                 <div class="chat-input">
                     <input id="chatIn" type="text" placeholder="Message...">
-                    <button id="sendBtn">
-                        <svg><use href="#ic-send"/></svg>
-                    </button>
+                    <button id="sendBtn">➤</button>
                 </div>
             </div>
             <div class="panel" id="peoplePanel">
@@ -545,32 +553,30 @@
         <div class="toggle-group">
             <span class="toggle-label">Mic</span>
             <button class="toggle-pill state-on" id="micBtn">
-                <svg><use id="micIcon" href="#ic-mic"/></svg>
-                <span class="pill-text">ON</span>
+                <span class="pill-emoji" id="micEmoji">🎙️</span>
+                <span class="pill-text" id="micText">ON</span>
             </button>
         </div>
         <div class="toggle-group">
             <span class="toggle-label">Camera</span>
             <button class="toggle-pill state-off" id="camBtn">
-                <svg><use id="camIcon" href="#ic-cam-off"/></svg>
-                <span class="pill-text">OFF</span>
+                <span class="pill-emoji" id="camEmoji">📷</span>
+                <span class="pill-text" id="camText">OFF</span>
             </button>
         </div>
         <div class="toggle-group" id="screenToggleGroup">
             <span class="toggle-label">Screen</span>
             <button class="toggle-pill state-off" id="screenBtn">
-                <svg><use id="screenIcon" href="#ic-screen"/></svg>
-                <span class="pill-text">Share</span>
+                <span class="pill-emoji">🖥️</span>
+                <span class="pill-text" id="screenText">Share</span>
             </button>
         </div>
-        <button class="end-btn" id="endBtn" title="Leave">
-            <svg width="22" height="22"><use href="#ic-end"/></svg>
-        </button>
+        <button class="end-btn" id="endBtn" title="Leave">📵</button>
         <div class="toggle-group mobile-drawer-btn">
             <span class="toggle-label">Chat</span>
-            <button class="toggle-pill state-off" id="drawerToggleBtn" style="width:68px;">
-                <svg><use href="#ic-chat"/></svg>
-                <span>Open</span>
+            <button class="toggle-pill state-off" id="drawerToggleBtn" style="width:62px;">
+                <span class="pill-emoji">💬</span>
+                <span class="pill-text">Open</span>
             </button>
         </div>
     </div>
@@ -588,9 +594,7 @@
         <div class="chat-msgs" id="drawerChatMsgs"></div>
         <div class="chat-input">
             <input id="drawerChatIn" type="text" placeholder="Message...">
-            <button id="drawerSendBtn">
-                <svg><use href="#ic-send"/></svg>
-            </button>
+            <button id="drawerSendBtn">➤</button>
         </div>
     </div>
     <div class="drawer-panel" id="drawerPeoplePanel">
@@ -655,9 +659,12 @@ const PICS = {
 // PLATFORM DETECTION
 // ─────────────────────────────────────────────
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-const isMobileSafari = isIOS && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
-// getDisplayMedia is blocked on ALL iOS browsers (WebKit restriction), and also not available on
-// Android Chrome < 74 or Firefox for Android < 66. Detect properly:
+const isAndroid = /Android/.test(navigator.userAgent);
+const isMobile = isIOS || isAndroid || window.innerWidth <= 700;
+// Chrome on Android has a known issue with facingMode constraints; detect carefully
+const isChromeMobile = isMobile && /Chrome/.test(navigator.userAgent) && !/CriOS/.test(navigator.userAgent) && !isIOS;
+const isChromeiOS = /CriOS/.test(navigator.userAgent);
+
 const screenShareSupported = (
     typeof navigator.mediaDevices !== 'undefined' &&
     typeof navigator.mediaDevices.getDisplayMedia === 'function' &&
@@ -678,16 +685,17 @@ let micOn         = true;
 let camOn         = false;
 let hasVideoPermission = false;
 
-// ── SCREEN SHARE ──
 let screenOn     = false;
 let screenStream = null;
 let camWasOnBeforeScreen = false;
-// We keep a separate AudioContext mixer so screen audio + mic can both be sent simultaneously
 let audioCtx     = null;
-let audioMixer   = null;  // MediaStreamAudioDestinationNode
+let audioMixer   = null;
 let micSource    = null;
 let screenAudioSource = null;
-let mixedAudioTrack = null;  // the mixed track injected into localStream
+let mixedAudioTrack = null;
+
+// Track the "original" mic track so we can always re-mute it
+let originalMicTrack = null;
 
 let participants = {};
 let connections  = {};
@@ -697,6 +705,12 @@ let hostLastPing = 0;
 let heartbeatSendTimer  = null;
 let heartbeatCheckTimer = null;
 let takeoverTimer       = null;
+
+// Fullscreen tile tracking
+let fullscreenTileId = null;
+let fullscreenTileEl = null;
+let fullscreenOriginalParent = null;
+let fullscreenNextSibling = null;
 
 // ─────────────────────────────────────────────
 // UTILS
@@ -712,7 +726,7 @@ function hhmm(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:
 function safePic(p){ return PICS[Math.max(0,Math.min(19,parseInt(p)||0))]||PICS[0]; }
 
 // ─────────────────────────────────────────────
-// BAN HELPERS  (unchanged)
+// BAN HELPERS
 // ─────────────────────────────────────────────
 function parseBan(f){
     if(!f) return null;
@@ -857,39 +871,98 @@ qs('joinBtn').onclick=async()=>{
     if(!currentUser) return;
     qs('authWrap').style.display='none';
     qs('app').style.display='flex';
-    // Show/hide screen share button based on support
     if(!screenShareSupported){
         qs('screenBtn').classList.add('state-disabled');
         qs('screenBtn').disabled = true;
-        qs('screenBtn').title = isIOS ? 'Screen sharing is not supported on iOS browsers' : 'Screen sharing not supported in this browser';
+        qs('screenBtn').title = isIOS ? 'Screen sharing is not supported on iOS' : 'Screen sharing not supported';
     }
     await initMedia();
 };
 
 // ─────────────────────────────────────────────
-// MEDIA INIT
+// MEDIA INIT — fixed for Chrome mobile
 // ─────────────────────────────────────────────
 async function initMedia(){
-    hasVideoPermission=false;
-    try{
-        localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:true});
-        hasVideoPermission=true;
-        micOn=true; camOn=false;
-        localStream.getVideoTracks().forEach(t=>{ t.enabled=false; });
-        toast('Mic ON · Camera OFF');
-    }catch(e){
-        try{
-            localStream=await navigator.mediaDevices.getUserMedia({audio:true});
-            hasVideoPermission=false;
-            micOn=true; camOn=false;
-            toast('Audio only — camera unavailable');
-        }catch(e2){
-            localStream=new MediaStream();
-            hasVideoPermission=false;
-            micOn=false; camOn=false;
-            toast('No media access — check browser permissions');
+    hasVideoPermission = false;
+    localStream = null;
+    originalMicTrack = null;
+
+    // Build constraints carefully for mobile compatibility
+    // Chrome on Android can fail with 'ideal' facing mode constraints; use minimal constraints first
+    const audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+    };
+
+    // Try with video first
+    let videoConstraints = true;
+    if (isMobile) {
+        // Use minimal video constraints on mobile to avoid Chrome Android issues
+        videoConstraints = { facingMode: 'user' };
+    }
+
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints,
+            video: videoConstraints
+        });
+        hasVideoPermission = true;
+    } catch(e1) {
+        // If facingMode failed on mobile, try without it
+        if (isMobile && e1.name !== 'NotAllowedError') {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: audioConstraints,
+                    video: true
+                });
+                hasVideoPermission = true;
+            } catch(e2) {
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                } catch(e3) {
+                    localStream = new MediaStream();
+                }
+            }
+        } else if (e1.name !== 'NotAllowedError') {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+            } catch(e2) {
+                localStream = new MediaStream();
+            }
+        } else {
+            // Permission denied
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+            } catch(e2) {
+                localStream = new MediaStream();
+            }
         }
     }
+
+    micOn = true;
+    camOn = false;
+
+    // Camera starts off — disable video tracks
+    localStream.getVideoTracks().forEach(t => { t.enabled = false; });
+
+    // Store original mic track reference
+    const micTracks = localStream.getAudioTracks();
+    if (micTracks.length > 0) {
+        originalMicTrack = micTracks[0];
+        // Ensure echo cancellation (belt-and-suspenders)
+        originalMicTrack.enabled = true;
+    }
+
+    if (hasVideoPermission) {
+        toast('Mic ON · Camera OFF — tap 📷 to enable');
+    } else if (localStream.getAudioTracks().length > 0) {
+        toast('Audio only — camera not available');
+    } else {
+        micOn = false;
+        toast('No media access — check browser permissions');
+    }
+
     updateCtrlBtns();
     tryBecomeHost();
 }
@@ -1002,6 +1075,8 @@ function joinAsGuest(){
                 const existingHasVideo=participants[meta.sourceId]?.hasVideo||false;
                 const existingScreen=participants[meta.sourceId]?.isScreenSharing||false;
                 upsertParticipant(meta.sourceId,meta.sourceName,meta.sourcePic,remoteStream,false,existingHasVideo,existingScreen);
+                // Force video refresh for this participant
+                refreshVideoElement(meta.sourceId);
             });
             incomingCall.on('close',()=>{delete participants[meta.sourceId];renderAll();});
             incomingCall.on('error',e=>console.error('relay-in err',e));
@@ -1015,22 +1090,37 @@ function joinAsGuest(){
 }
 
 // ─────────────────────────────────────────────
-// AUDIO ELEMENTS
+// AUDIO ELEMENTS — with echo fix
 // ─────────────────────────────────────────────
 const audioElements = {};
-function ensureAudioPlaying(stream,peerId){
-    if(!stream||!peerId||peerId===myPeerId) return;
+function ensureAudioPlaying(stream, peerId){
+    // NEVER play our own audio back to us — this is what causes hearing yourself
+    if(!stream || !peerId || peerId === myPeerId) return;
+
     if(!audioElements[peerId]){
-        const aud=document.createElement('audio');
-        aud.autoplay=true; aud.playsInline=true;
-        aud.style.display='none';
+        const aud = document.createElement('audio');
+        aud.autoplay = true;
+        aud.playsInline = true;
+        aud.muted = false;
+        // Prevent any echo by not attaching to a video element that already plays it
+        aud.style.display = 'none';
         document.body.appendChild(aud);
-        audioElements[peerId]=aud;
+        audioElements[peerId] = aud;
     }
-    const aud=audioElements[peerId];
-    if(aud.srcObject!==stream){
-        aud.srcObject=stream;
-        aud.play().catch(e=>console.warn('audio play blocked:',e));
+    const aud = audioElements[peerId];
+    if(aud.srcObject !== stream){
+        aud.srcObject = stream;
+        aud.play().catch(e => {
+            // Autoplay blocked — will play on next user interaction
+            console.warn('audio play blocked for', peerId, e);
+            const unlockAudio = () => {
+                aud.play().catch(()=>{});
+                document.removeEventListener('click', unlockAudio);
+                document.removeEventListener('touchstart', unlockAudio);
+            };
+            document.addEventListener('click', unlockAudio, {once:true});
+            document.addEventListener('touchstart', unlockAudio, {once:true});
+        });
     }
 }
 function cleanupAudioElement(peerId){
@@ -1039,6 +1129,19 @@ function cleanupAudioElement(peerId){
         audioElements[peerId].remove();
         delete audioElements[peerId];
     }
+}
+
+// ─────────────────────────────────────────────
+// Force-refresh a video element for a participant
+// This fixes the "screen share not showing" bug — after a track
+// replacement the video element's srcObject needs to be re-assigned
+// ─────────────────────────────────────────────
+function refreshVideoElement(peerId){
+    // Find the tile for this peer and update its video srcObject
+    const grid = qs('videoGrid');
+    // We'll just trigger a full re-render; the key fix is that renderAll
+    // always re-assigns srcObject which picks up the new track
+    setTimeout(() => renderAll(), 100);
 }
 
 // ─────────────────────────────────────────────
@@ -1083,6 +1186,8 @@ function onGuestCall(call){
         connections[gid].pic=pic;
         ensureAudioPlaying(guestStream,gid);
         upsertParticipant(gid,name,pic,guestStream,false,hasVid,isScreen);
+        // Force refresh the video element to pick up new stream
+        refreshVideoElement(gid);
         Object.entries(connections).forEach(([otherId,other])=>{
             if(otherId===gid) return;
             if(!other.conn||!other.conn.open) return;
@@ -1110,6 +1215,10 @@ function relayTo(targetId,sourceId,sourceName,sourcePic,sourceStream){
     if(!connections[sourceId]) connections[sourceId]={};
     if(!connections[sourceId].relays) connections[sourceId].relays={};
     connections[sourceId].relays[targetId]=rc;
+    rc.on('stream', () => {
+        // When the relay stream arrives at target, trigger refresh
+        refreshVideoElement(sourceId);
+    });
     rc.on('error',e=>console.error('relay err',e));
 }
 
@@ -1262,6 +1371,69 @@ function pushOnlineCount(){
 }
 
 // ─────────────────────────────────────────────
+// TILE FULLSCREEN
+// ─────────────────────────────────────────────
+function enterTileFullscreen(tileEl, peerId) {
+    if (fullscreenTileEl) exitTileFullscreen();
+
+    fullscreenTileId = peerId;
+    fullscreenTileEl = tileEl;
+    fullscreenOriginalParent = tileEl.parentElement;
+    fullscreenNextSibling = tileEl.nextElementSibling;
+
+    // Move tile to body so it overlays everything
+    document.body.appendChild(tileEl);
+    tileEl.classList.add('vtile-fullscreen');
+
+    // Update video object-fit to 'contain' for proper display
+    const vid = tileEl.querySelector('video');
+    if (vid) vid.style.objectFit = 'contain';
+
+    // Show exit hint
+    const hint = tileEl.querySelector('.fs-exit-hint');
+    if (hint) hint.style.display = 'flex';
+
+    tileEl._fsClickHandler = (e) => {
+        e.stopPropagation();
+        exitTileFullscreen();
+    };
+    tileEl.addEventListener('click', tileEl._fsClickHandler);
+}
+
+function exitTileFullscreen() {
+    if (!fullscreenTileEl) return;
+
+    const tileEl = fullscreenTileEl;
+    fullscreenTileEl = null;
+    fullscreenTileId = null;
+
+    tileEl.classList.remove('vtile-fullscreen');
+    const vid = tileEl.querySelector('video');
+    if (vid) vid.style.objectFit = '';
+
+    const hint = tileEl.querySelector('.fs-exit-hint');
+    if (hint) hint.style.display = '';
+
+    // Remove click handler
+    if (tileEl._fsClickHandler) {
+        tileEl.removeEventListener('click', tileEl._fsClickHandler);
+        delete tileEl._fsClickHandler;
+    }
+
+    // Move back to original position in grid
+    if (fullscreenOriginalParent) {
+        if (fullscreenNextSibling && fullscreenNextSibling.parentElement === fullscreenOriginalParent) {
+            fullscreenOriginalParent.insertBefore(tileEl, fullscreenNextSibling);
+        } else {
+            fullscreenOriginalParent.appendChild(tileEl);
+        }
+    }
+
+    fullscreenOriginalParent = null;
+    fullscreenNextSibling = null;
+}
+
+// ─────────────────────────────────────────────
 // GRID LAYOUT
 // ─────────────────────────────────────────────
 function applyGridLayout(grid,n){
@@ -1307,10 +1479,15 @@ function applyGridLayout(grid,n){
 }
 
 // ─────────────────────────────────────────────
-// RENDER
+// RENDER — key fix: always re-assign srcObject to video elements
+// to ensure new tracks (screen share / cam toggle) show up
 // ─────────────────────────────────────────────
 function renderAll(){
     const grid=qs('videoGrid'), plist=qs('peopleList'), dplist=qs('drawerPeopleList');
+
+    // If a tile is fullscreen, we need to update it in place without destroying it
+    const fsId = fullscreenTileId;
+
     grid.innerHTML=''; plist.innerHTML=''; dplist.innerHTML='';
     const ids=Object.keys(participants), n=ids.length;
     qs('onlineCount').textContent=n;
@@ -1325,6 +1502,7 @@ function renderAll(){
     const areaLetters=['a','b','c','d','e','f','g','h'];
     applyGridLayout(grid,n);
     const hasAreas=!!(grid.style.gridTemplateAreas&&grid.style.gridTemplateAreas!=='none'&&grid.style.gridTemplateAreas!=='');
+
     ordered.forEach((id,idx)=>{
         const p=participants[id]; if(!p) return;
         const isMe=(id===myPeerId);
@@ -1332,21 +1510,33 @@ function renderAll(){
         const isSharing=isMe?screenOn:(p.isScreenSharing||false);
         const tile=document.createElement('div');
         tile.className='vtile'+(isSpotlight?' spotlight':'')+(isSharing?' screensharing':'');
+        tile.dataset.peerId=id;
         if(hasAreas&&idx<areaLetters.length) tile.style.gridArea=areaLetters[idx];
+
+        // Determine if we should show video
         let showVid=false;
         if(isMe){
             showVid=(camOn||screenOn)&&localStream!=null&&
                     localStream.getVideoTracks().some(t=>t.enabled&&t.readyState==='live');
         }else{
+            // FIX: check hasVideo flag AND that the stream actually has a live video track
             showVid=p.hasVideo&&p.stream!=null&&
-                    p.stream.getVideoTracks().some(t=>t.readyState==='live');
+                    p.stream.getVideoTracks().length>0&&
+                    p.stream.getVideoTracks().some(t=>t.readyState!=='ended');
         }
+
         if(showVid){
             const vid=document.createElement('video');
-            vid.autoplay=true; vid.playsInline=true; vid.muted=isMe;
-            vid.srcObject=isMe?localStream:p.stream;
+            vid.autoplay=true; vid.playsInline=true;
+            // CRITICAL: mute our own video preview; do NOT mute others' video (audio is handled by separate audio elements)
+            vid.muted=true; // Always mute video element audio — audio is handled by dedicated audio elements
+            const stream=isMe?localStream:p.stream;
+            // Always reassign srcObject — this is what picks up replaced tracks
+            vid.srcObject=stream;
+            vid.onloadedmetadata=()=>{ vid.play().catch(()=>{}); };
             tile.appendChild(vid);
-            if(!isMe) ensureAudioPlaying(p.stream,id);
+            // Ensure audio plays for remote participants via audio element (not video element)
+            if(!isMe && p.stream) ensureAudioPlaying(p.stream,id);
         }else{
             const ov=document.createElement('div'); ov.className='av-overlay';
             const img=document.createElement('img');
@@ -1354,37 +1544,83 @@ function renderAll(){
             img.onerror=()=>img.src=PICS[0];
             const nm=document.createElement('span'); nm.textContent=p.name+(isMe?' (you)':'');
             ov.append(img,nm); tile.appendChild(ov);
+            // Still ensure audio for remote
+            if(!isMe && p.stream) ensureAudioPlaying(p.stream,id);
         }
+
+        // Screen badge
         const sb=document.createElement('div');
         sb.className='screen-badge'+(isSharing?' show':'');
-        sb.textContent='Screen';
+        sb.textContent='📺 Screen';
         tile.appendChild(sb);
+
+        // Name label
         const lbl=document.createElement('div'); lbl.className='name-label';
         const limg=document.createElement('img');
         limg.src=isMe?myPicUrl:(p.pic||PICS[0]);
         limg.onerror=()=>limg.src=PICS[0];
         lbl.append(limg,document.createTextNode(p.name+(isMe?' (you)':'')));
         tile.appendChild(lbl);
+
+        // Mute icon
         const mb=document.createElement('div');
         mb.className='mute-icon'+(p.muted?' show':'');
-        // SVG mic-off inline
-        mb.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23C18.65 13.3 19 12.19 19 11zm-4.02.17c0-.06.02-.11.02-.17V5c0-2.21-1.79-4-4-4-1.48 0-2.77.81-3.46 2l1.46 1.46c.28-.62.89-1.06 1.6-1.06 1.1 0 2 .9 2 2v.84l5.6 5.6c.01-.1.02-.2.02-.3M4.27 3L3 4.27l6.01 6.01V11c0 2.21 1.79 4 4 4 .21 0 .39-.02.59-.05l1.62 1.62c-.7.3-1.44.49-2.21.49-2.76 0-5.3-2.1-5.3-5.5H6c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></svg>';
+        mb.textContent='🔇';
         tile.appendChild(mb);
+
+        // Fullscreen exit hint
+        const hint=document.createElement('div');
+        hint.className='fs-exit-hint';
+        hint.textContent='Tap to exit fullscreen';
+        tile.appendChild(hint);
+
+        // Click to fullscreen (double-click on desktop, single tap on mobile)
+        if(isMobile){
+            tile.addEventListener('click', (e) => {
+                if(e.target.closest('.mute-icon')) return;
+                if(fullscreenTileId === id){
+                    exitTileFullscreen();
+                } else {
+                    enterTileFullscreen(tile, id);
+                }
+            });
+        } else {
+            tile.addEventListener('dblclick', (e) => {
+                if(fullscreenTileId === id){
+                    exitTileFullscreen();
+                } else {
+                    enterTileFullscreen(tile, id);
+                }
+            });
+        }
+
         grid.appendChild(tile);
+
+        // If this was the fullscreen tile, re-enter fullscreen
+        if(fsId === id){
+            enterTileFullscreen(tile, id);
+        }
+
         function makePerson(){
             const pi=document.createElement('div'); pi.className='person';
             const pimg=document.createElement('img');
             pimg.src=isMe?myPicUrl:(p.pic||PICS[0]);
             pimg.onerror=()=>pimg.src=PICS[0];
             const pn=document.createElement('span'); pn.className='person-name';
-            pn.textContent=p.name+(isMe?' (you)':'')+(isSharing?' [Screen]':'');
+            pn.textContent=p.name+(isMe?' (you)':'')+(isSharing?' 🖥️':'');
             pi.append(pimg,pn); return pi;
         }
         plist.appendChild(makePerson());
         dplist.appendChild(makePerson());
     });
 }
-window.addEventListener('resize',()=>{ if(qs('app').style.display!=='none') renderAll(); });
+window.addEventListener('resize',()=>{
+    if(qs('app').style.display!=='none'){
+        // Exit tile fullscreen on resize as layout changes
+        exitTileFullscreen();
+        renderAll();
+    }
+});
 
 // ─────────────────────────────────────────────
 // CHAT
@@ -1430,47 +1666,78 @@ qs('drawerSendBtn').onclick=sendChat;
 // MIC TOGGLE
 // ─────────────────────────────────────────────
 function toggleMic(){
-    micOn=!micOn;
-    // Mute/unmute the actual mic track in localStream
-    localStream.getAudioTracks().forEach(t=>{
-        // Only mute our mic — not the screen audio track
-        // Screen audio source is managed separately via AudioContext
-        if(t._isMixedAudio) return; // skip mixed/screen tracks
-        t.enabled=micOn;
-    });
-    // If we're using an AudioContext mixer, toggle the mic gain instead
-    if(micSource && audioCtx){
-        if(!micSource._gainNode){
-            const g=audioCtx.createGain();
-            micSource.connect(g);
-            // reconnect to destination
-            if(audioMixer) g.connect(audioMixer);
-            micSource._gainNode=g;
-            micSource.disconnect(audioMixer); // disconnect direct connection
+    micOn = !micOn;
+
+    if(mixedAudioTrack && audioCtx) {
+        // We're in screen share mixer mode — mute/unmute via gain node
+        if(micSource?._gainNode) {
+            micSource._gainNode.gain.value = micOn ? 1 : 0;
         }
-        micSource._gainNode.gain.value = micOn ? 1 : 0;
+    } else {
+        // Normal mode — just toggle the mic track
+        localStream.getAudioTracks().forEach(t => {
+            if(!t._isMixedAudio) t.enabled = micOn;
+        });
     }
-    if(participants[myPeerId]) participants[myPeerId].muted=!micOn;
+
+    if(participants[myPeerId]) participants[myPeerId].muted = !micOn;
     renderAll(); updateCtrlBtns();
-    toast(micOn?'Microphone ON':'Microphone OFF');
+    toast(micOn ? '🎙️ Microphone ON' : '🔇 Microphone OFF');
     const pkt={type:'mute-status',muted:!micOn};
     if(isHost) broadcastAll({...pkt,id:HOST_ID});
     else if(hostConn&&hostConn.open) hostConn.send(pkt);
 }
 
 // ─────────────────────────────────────────────
-// CAMERA TOGGLE
+// CAMERA TOGGLE — fixed with proper track replacement
 // ─────────────────────────────────────────────
-function toggleCam(){
+async function toggleCam(){
     if(screenOn){toast('Stop screen sharing first');return;}
-    if(!hasVideoPermission){toast('Camera not available — close other apps using it and rejoin');return;}
-    const vTracks=localStream?localStream.getVideoTracks():[];
-    if(vTracks.length===0){toast('No camera track found — try rejoining');return;}
-    camOn=!camOn;
-    vTracks.forEach(t=>{t.enabled=camOn;});
-    if(participants[myPeerId]){participants[myPeerId].hasVideo=camOn;participants[myPeerId].stream=localStream;}
+    if(!hasVideoPermission){
+        toast('Camera not available — please rejoin');
+        return;
+    }
+
+    const vTracks = localStream ? localStream.getVideoTracks() : [];
+
+    if(vTracks.length === 0){
+        // No video track in stream yet — try to get one
+        try {
+            let constraints = isMobile ? {facingMode:'user'} : true;
+            let tempStream;
+            try {
+                tempStream = await navigator.mediaDevices.getUserMedia({video: constraints, audio: false});
+            } catch(e) {
+                tempStream = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
+            }
+            const newVidTrack = tempStream.getVideoTracks()[0];
+            if(newVidTrack){
+                localStream.addTrack(newVidTrack);
+                newVidTrack.enabled = true;
+                camOn = true;
+                replaceTrackInPeers(newVidTrack, 'video');
+            }
+        } catch(e) {
+            toast('Could not access camera: ' + e.message);
+            return;
+        }
+    } else {
+        camOn = !camOn;
+        vTracks.forEach(t => { t.enabled = camOn; });
+        // Notify peers of the track state (track is already in the stream)
+        if(camOn) {
+            // Re-send the enabled track to ensure peers pick it up
+            const activeVid = vTracks.find(t => t.readyState === 'live');
+            if(activeVid) replaceTrackInPeers(activeVid, 'video');
+        }
+    }
+
+    if(participants[myPeerId]){
+        participants[myPeerId].hasVideo = camOn;
+        participants[myPeerId].stream = localStream;
+    }
     renderAll(); updateCtrlBtns();
-    toast(camOn?'Camera ON':'Camera OFF');
+    toast(camOn ? '📷 Camera ON' : '📷 Camera OFF');
     const pkt={type:'cam-status',hasVideo:camOn};
     if(isHost) broadcastAll({...pkt,id:HOST_ID});
     else if(hostConn&&hostConn.open) hostConn.send(pkt);
@@ -1481,13 +1748,21 @@ function toggleCam(){
 // ─────────────────────────────────────────────
 function replaceTrackInPeers(newTrack, kind){
     if(!peer) return;
-    Object.values(peer.connections).forEach(connArr=>{
-        connArr.forEach(conn=>{
-            if(conn.type==='media'&&conn.peerConnection){
-                const senders=conn.peerConnection.getSenders();
-                const sender=senders.find(s=>s.track&&s.track.kind===kind);
-                if(sender&&newTrack){
-                    sender.replaceTrack(newTrack).catch(e=>console.warn('replaceTrack err',e));
+    const allConns = peer.connections;
+    Object.values(allConns).forEach(connArr => {
+        if(!Array.isArray(connArr)) return;
+        connArr.forEach(conn => {
+            if(conn.type === 'media' && conn.peerConnection){
+                const pc = conn.peerConnection;
+                const senders = pc.getSenders();
+                const sender = senders.find(s => s.track && s.track.kind === kind);
+                if(sender && newTrack){
+                    sender.replaceTrack(newTrack).catch(e => console.warn('replaceTrack err', e));
+                } else if(sender && !newTrack){
+                    // Track disabled case — keep sender but disable
+                } else if(!sender && newTrack){
+                    // No sender found for this kind — might need to add track
+                    // This can happen after screen share; do nothing, renegotiation handles it
                 }
             }
         });
@@ -1495,32 +1770,9 @@ function replaceTrackInPeers(newTrack, kind){
 }
 
 // ─────────────────────────────────────────────
-// SCREEN SHARE  — completely rewritten for robustness + audio
+// SCREEN SHARE — audio mixer + robust track replacement
 // ─────────────────────────────────────────────
-
-/*
- * SCREEN AUDIO STRATEGY
- * ─────────────────────
- * Chrome/Edge allow getDisplayMedia with audio:true and the user can tick
- * "Share tab audio" or "Share system audio". Safari/Firefox do NOT provide
- * a screen audio track. When we get a screen audio track we want to MERGE it
- * with the user's microphone so that both come out of the single audio track
- * in localStream (which is already wired into all the peer calls).
- *
- * We use the Web Audio API to create a mixer:
- *   [micTrack]    → MediaStreamSource → GainNode(mic)   ─┐
- *                                                          ├─→ Destination → mixedTrack
- *   [screenAudio] → MediaStreamSource → GainNode(screen)─┘
- *
- * The mixedTrack replaces the mic track in localStream via replaceTrack.
- * On stop we tear down the AudioContext and restore the original mic track.
- *
- * If getDisplayMedia returns no audio track we just replace the video track
- * as before and leave audio untouched.
- */
-
 function createAudioMixer(micTrack, screenAudioTrack){
-    // Create or resume AudioContext
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(audioCtx.state === 'suspended') audioCtx.resume();
 
@@ -1545,7 +1797,6 @@ function createAudioMixer(micTrack, screenAudioTrack){
         screenGain.connect(audioMixer);
     }
 
-    // The mixed output track
     mixedAudioTrack = audioMixer.stream.getAudioTracks()[0];
     mixedAudioTrack._isMixedAudio = true;
     return mixedAudioTrack;
@@ -1553,20 +1804,14 @@ function createAudioMixer(micTrack, screenAudioTrack){
 
 function teardownAudioMixer(){
     try{ if(audioCtx) audioCtx.close(); }catch(e){}
-    audioCtx = null;
-    audioMixer = null;
-    micSource = null;
-    screenAudioSource = null;
+    audioCtx = null; audioMixer = null;
+    micSource = null; screenAudioSource = null;
     mixedAudioTrack = null;
 }
 
 async function toggleScreen(){
     if(!screenShareSupported){
-        if(isIOS){
-            toast('Screen sharing is not available on iOS — Apple restricts this in all browsers');
-        } else {
-            toast('Screen sharing is not supported in this browser');
-        }
+        toast(isIOS ? '📵 Screen sharing not supported on iOS' : '📵 Screen sharing not supported in this browser');
         return;
     }
     if(!screenOn){
@@ -1578,19 +1823,18 @@ async function toggleScreen(){
 
 async function startScreenShare(){
     try{
-        // Request screen + system audio if available
         screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: { cursor: 'always', displaySurface: 'monitor' },
+            video: { cursor: 'always' },
             audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
                 sampleRate: 44100,
-                // Chrome: this signals we want system audio
-                // Firefox/Safari will ignore and not provide audio track
             }
         });
     }catch(e){
-        if(e.name!=='NotAllowedError') toast('Could not start screen share: '+e.message);
+        if(e.name !== 'NotAllowedError' && e.name !== 'AbortError'){
+            toast('Could not start screen share: ' + e.message);
+        }
         screenStream = null;
         return;
     }
@@ -1599,112 +1843,139 @@ async function startScreenShare(){
     camWasOnBeforeScreen = camOn;
 
     const screenVideoTrack = screenStream.getVideoTracks()[0];
-    const screenAudioTrack = screenStream.getAudioTracks()[0] || null; // may be null
+    const screenAudioTrack = screenStream.getAudioTracks()[0] || null;
 
     // ── Replace video track in localStream ──
-    // Remove old video tracks
-    localStream.getVideoTracks().forEach(t=>{
+    localStream.getVideoTracks().forEach(t => {
         localStream.removeTrack(t);
-        t.stop();
+        // Don't stop camera track — we'll need it when screen share ends
+        // t.stop(); // removed
     });
     localStream.addTrack(screenVideoTrack);
 
-    // ── Handle audio: mix screen audio + mic ──
-    const currentMicTrack = localStream.getAudioTracks().find(t=>!t._isMixedAudio);
+    // ── Handle audio ──
+    const currentMicTrack = localStream.getAudioTracks().find(t => !t._isMixedAudio);
 
     if(screenAudioTrack && currentMicTrack){
-        // Mix mic + screen audio
         const mixed = createAudioMixer(currentMicTrack, screenAudioTrack);
-        // Remove current mic track from localStream and add mixed track
-        localStream.getAudioTracks().forEach(t=>localStream.removeTrack(t));
+        localStream.getAudioTracks().forEach(t => localStream.removeTrack(t));
         localStream.addTrack(mixed);
         replaceTrackInPeers(mixed, 'audio');
     } else if(screenAudioTrack){
-        // No mic — just use screen audio
-        localStream.getAudioTracks().forEach(t=>localStream.removeTrack(t));
+        localStream.getAudioTracks().forEach(t => localStream.removeTrack(t));
         localStream.addTrack(screenAudioTrack);
         replaceTrackInPeers(screenAudioTrack, 'audio');
     }
-    // If no screenAudioTrack, leave audio untouched
 
-    // Push new video to peers
+    // Push video to peers and schedule a follow-up push to handle any race conditions
     replaceTrackInPeers(screenVideoTrack, 'video');
+    setTimeout(() => replaceTrackInPeers(screenVideoTrack, 'video'), 500);
 
-    // Browser's native "Stop sharing" button
-    screenVideoTrack.onended = ()=>{ if(screenOn) stopScreenShare(); };
+    // Browser "Stop sharing" button
+    screenVideoTrack.onended = () => { if(screenOn) stopScreenShare(); };
 
     camOn = true;
     if(participants[myPeerId]){
-        participants[myPeerId].hasVideo=true;
-        participants[myPeerId].isScreenSharing=true;
-        participants[myPeerId].stream=localStream;
+        participants[myPeerId].hasVideo = true;
+        participants[myPeerId].isScreenSharing = true;
+        participants[myPeerId].stream = localStream;
     }
     renderAll(); updateCtrlBtns();
-
-    if(screenAudioTrack){
-        toast('Screen sharing ON — with audio');
-    } else {
-        toast('Screen sharing ON — no audio (check "Share audio" in the picker)');
-    }
+    toast(screenAudioTrack ? '🖥️ Screen sharing ON (with audio)' : '🖥️ Screen sharing ON');
     broadcastScreenStatus(true);
 }
 
 async function stopScreenShare(){
     screenOn = false;
 
-    // Stop all screen stream tracks
+    const screenTracks = screenStream ? screenStream.getTracks() : [];
+
+    // Remove screen video track from localStream
+    localStream.getVideoTracks().forEach(t => {
+        if(screenTracks.includes(t)){
+            localStream.removeTrack(t);
+        }
+    });
+
+    // Stop screen stream
     if(screenStream){
-        screenStream.getTracks().forEach(t=>t.stop());
+        screenStream.getTracks().forEach(t => t.stop());
         screenStream = null;
     }
 
     // Tear down audio mixer
     teardownAudioMixer();
 
-    // Remove all current tracks from localStream
-    localStream.getTracks().forEach(t=>localStream.removeTrack(t));
+    // Restore mic track in stream
+    localStream.getAudioTracks().forEach(t => localStream.removeTrack(t));
+    if(originalMicTrack && originalMicTrack.readyState !== 'ended'){
+        localStream.addTrack(originalMicTrack);
+        originalMicTrack.enabled = micOn;
+        replaceTrackInPeers(originalMicTrack, 'audio');
+    } else {
+        // Mic track died — get a fresh one
+        try {
+            const freshAudio = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true }
+            });
+            const newMic = freshAudio.getAudioTracks()[0];
+            if(newMic){
+                originalMicTrack = newMic;
+                newMic.enabled = micOn;
+                localStream.addTrack(newMic);
+                replaceTrackInPeers(newMic, 'audio');
+            }
+        } catch(e) { console.warn('Could not restore mic after screen share', e); }
+    }
 
-    // Re-acquire fresh camera + mic tracks
-    let freshStream = null;
-    try{
-        freshStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: hasVideoPermission
-        });
-    }catch(e){
-        // Try audio only
-        try{
-            freshStream = await navigator.mediaDevices.getUserMedia({audio:true});
-        }catch(e2){
-            console.warn('Could not restore media after screen share',e2);
+    // Restore camera track
+    if(camWasOnBeforeScreen && hasVideoPermission){
+        // Try to reuse existing video track
+        let camTrack = null;
+        try {
+            let constraints = isMobile ? {facingMode:'user'} : true;
+            let freshVid;
+            try { freshVid = await navigator.mediaDevices.getUserMedia({video: constraints, audio: false}); }
+            catch(e) { freshVid = await navigator.mediaDevices.getUserMedia({video: true, audio: false}); }
+            camTrack = freshVid.getVideoTracks()[0];
+        } catch(e) { console.warn('Could not restore camera', e); }
+
+        if(camTrack){
+            camTrack.enabled = true;
+            localStream.addTrack(camTrack);
+            replaceTrackInPeers(camTrack, 'video');
+            camOn = true;
+        } else {
+            camOn = false;
+        }
+    } else {
+        // Add a disabled video track as placeholder
+        if(hasVideoPermission && localStream.getVideoTracks().length === 0){
+            try {
+                let constraints = isMobile ? {facingMode:'user'} : true;
+                let freshVid;
+                try { freshVid = await navigator.mediaDevices.getUserMedia({video: constraints, audio: false}); }
+                catch(e) { freshVid = await navigator.mediaDevices.getUserMedia({video: true, audio: false}); }
+                const camTrack = freshVid.getVideoTracks()[0];
+                if(camTrack){
+                    camTrack.enabled = false;
+                    localStream.addTrack(camTrack);
+                    replaceTrackInPeers(camTrack, 'video');
+                }
+            } catch(e) {}
         }
         camOn = false;
     }
 
-    if(freshStream){
-        freshStream.getTracks().forEach(t=>localStream.addTrack(t));
-        // Restore states
-        localStream.getAudioTracks().forEach(t=>{t.enabled=micOn;});
-        localStream.getVideoTracks().forEach(t=>{t.enabled=camWasOnBeforeScreen;});
-        camOn = camWasOnBeforeScreen;
-
-        // Push fresh tracks to all peers
-        const freshVid=localStream.getVideoTracks()[0];
-        const freshAud=localStream.getAudioTracks()[0];
-        if(freshVid) replaceTrackInPeers(freshVid,'video');
-        if(freshAud) replaceTrackInPeers(freshAud,'audio');
-    }
-
     if(participants[myPeerId]){
-        participants[myPeerId].hasVideo=camOn;
-        participants[myPeerId].isScreenSharing=false;
-        participants[myPeerId].stream=localStream;
+        participants[myPeerId].hasVideo = camOn;
+        participants[myPeerId].isScreenSharing = false;
+        participants[myPeerId].stream = localStream;
     }
     renderAll(); updateCtrlBtns();
-    toast('Screen sharing OFF');
+    toast('🖥️ Screen sharing OFF');
     broadcastScreenStatus(false);
 
-    // Broadcast cam state too
     const pkt={type:'cam-status',hasVideo:camOn};
     if(isHost) broadcastAll({...pkt,id:HOST_ID});
     else if(hostConn&&hostConn.open) hostConn.send(pkt);
@@ -1717,35 +1988,32 @@ function broadcastScreenStatus(isSharing){
 }
 
 // ─────────────────────────────────────────────
-// UPDATE TOGGLE VISUALS (using SVG icons, no emoji)
+// UPDATE CONTROL BUTTON VISUALS — emoji edition
 // ─────────────────────────────────────────────
 function updateCtrlBtns(){
     const m=qs('micBtn'), c=qs('camBtn'), s=qs('screenBtn');
 
     // Mic
     m.className='toggle-pill '+(micOn?'state-on':'state-off');
-    m.querySelector('.pill-text').textContent=micOn?'ON':'OFF';
-    qs('micIcon').setAttribute('href', micOn?'#ic-mic':'#ic-mic-off');
+    qs('micEmoji').textContent = micOn ? '🎙️' : '🔇';
+    qs('micText').textContent = micOn ? 'ON' : 'OFF';
 
     // Cam
-    const camActive=camOn&&!screenOn;
+    const camActive = camOn && !screenOn;
     c.className='toggle-pill '+(camActive?'state-on':'state-off');
-    c.querySelector('.pill-text').textContent=camActive?'ON':'OFF';
-    qs('camIcon').setAttribute('href', camActive?'#ic-cam':'#ic-cam-off');
+    qs('camEmoji').textContent = camActive ? '📷' : '📷';
+    qs('camText').textContent = camActive ? 'ON' : 'OFF';
 
     // Screen
     if(!screenShareSupported){
         s.className='toggle-pill state-disabled';
-        s.querySelector('.pill-text').textContent='N/A';
-        qs('screenIcon').setAttribute('href','#ic-screen');
+        qs('screenText').textContent = 'N/A';
     } else if(screenOn){
         s.className='toggle-pill state-screen';
-        s.querySelector('.pill-text').textContent='Stop';
-        qs('screenIcon').setAttribute('href','#ic-screen-stop');
+        qs('screenText').textContent = 'Stop';
     } else {
         s.className='toggle-pill state-off';
-        s.querySelector('.pill-text').textContent='Share';
-        qs('screenIcon').setAttribute('href','#ic-screen');
+        qs('screenText').textContent = 'Share';
     }
 }
 
@@ -1753,6 +2021,7 @@ function updateCtrlBtns(){
 // EXIT
 // ─────────────────────────────────────────────
 async function exitCall(){
+    exitTileFullscreen();
     cancelTakeover(); stopHeartbeat();
     if(screenOn){
         screenOn=false;
@@ -1771,6 +2040,7 @@ async function exitCall(){
     }
     Object.keys(audioElements).forEach(cleanupAudioElement);
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
+    originalMicTrack=null;
     try{peer?.destroy();}catch(e){}
     peer=null; hostConn=null;
     participants={}; connections={};
@@ -1821,7 +2091,7 @@ document.querySelectorAll('.drawer-tab').forEach(tab=>{
 });
 
 // ─────────────────────────────────────────────
-// FULLSCREEN
+// FULLSCREEN (whole app)
 // ─────────────────────────────────────────────
 qs('fullscreenBtn').onclick=()=>{
     const appEl=qs('app');
@@ -1835,12 +2105,20 @@ qs('fullscreenBtn').onclick=()=>{
 };
 function onFsChange(){
     const isFs=!!(document.fullscreenElement||document.webkitFullscreenElement);
-    const icon=qs('fullscreenBtn').querySelector('use');
-    icon.setAttribute('href',isFs?'#ic-fullscreen-exit':'#ic-fullscreen');
-    qs('fullscreenBtn').title=isFs?'Exit Fullscreen':'Fullscreen';
+    qs('fullscreenBtn').textContent = isFs ? '⛶' : '⛶';
+    qs('fullscreenBtn').title = isFs ? 'Exit Fullscreen' : 'Fullscreen';
 }
 document.addEventListener('fullscreenchange',onFsChange);
 document.addEventListener('webkitfullscreenchange',onFsChange);
+
+// ─────────────────────────────────────────────
+// Escape key exits tile fullscreen
+// ─────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape' && fullscreenTileEl) {
+        exitTileFullscreen();
+    }
+});
 </script>
 </body>
 </html>
