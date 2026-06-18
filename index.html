@@ -619,7 +619,8 @@ const PICS = {
     16:"https://static.wixstatic.com/media/4145c3_37ac7e6c1b654be48ea5baeaf5966d29~mv2.png",
     17:"https://static.wixstatic.com/media/4145c3_949b3293ffbb40a6a02454c5c32f8608~mv2.png",
     18:"https://static.wixstatic.com/media/4145c3_c5569f944b7848baa637f2843c4a320d~mv2.png",
-    19:"https://static.wixstatic.com/media/4145c3_1bb59962372746c1806696ee00f65787~mv2.png"
+    19:"https://static.wixstatic.com/media/4145c3_1bb59962372746c1806696ee00f65787~mv2.png",
+    20:"https://static.wixstatic.com/media/4145c3_aeed79261da9404982a7db6af712dcb1~mv2.png"   // ← 20th picture added
 };
 
 // ─────────────────────────────────────────────
@@ -663,7 +664,7 @@ function toast(msg){ const t=qs('toast'); t.textContent=msg; t.classList.add('sh
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function emailOf(u){ return u+'@homiecentre.com'; }
 function hhmm(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function safePic(p){ return PICS[Math.max(0,Math.min(19,parseInt(p)||0))]||PICS[0]; }
+function safePic(p){ return PICS[Math.max(0,Math.min(20,parseInt(p)||0))]||PICS[0]; }  // ← now allows 20
 
 // ─────────────────────────────────────────────
 // BAN
