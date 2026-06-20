@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Homie Chat – Video & Chat</title>
+    <title>Homie Chat Room – Video & Chat</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -97,6 +97,19 @@
         }
         .ban-box .ban-name { font-weight:700; color:#c00; font-size:14px; margin-bottom:4px; }
         .ban-box .ban-detail { color:#555; font-size:12px; margin:2px 0; }
+
+        /* ===== VERIFIED BADGE ===== */
+        .verified-badge {
+            width: 18px;
+            height: 18px;
+            background: url("https://static.wixstatic.com/media/4145c3_dae40d6d315647a8aa9aa82b02c0ef50~mv2.png") no-repeat center/contain;
+            display: inline-block;
+            vertical-align: middle;
+            flex-shrink: 0;
+            margin-left: 4px;
+        }
+        .auth-verified-badge { margin-left: 6px; }
+        .top-verified-badge { margin-left: 4px; }
 
         /* ===== APP ===== */
         #app {
@@ -212,7 +225,6 @@
         .vtile .mute-icon.show ~ .zoom-btn,
         .vtile .zoom-btn.muted-shift { right: 42px; }
 
-        /* Cam-recovering indicator */
         .vtile .cam-recovering {
             position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
             background:rgba(0,0,0,0.7); color:#aaa; font-size:11px;
@@ -224,7 +236,6 @@
         @keyframes spin { to { transform:rotate(360deg); } }
         .spin-icon { display:inline-block; animation:spin 1s linear infinite; }
 
-        /* Per-tile fullscreen */
         .tile-fs-wrap {
             display: none;
             position: fixed;
@@ -258,7 +269,6 @@
         }
         .tile-fs-name img { width:22px; height:22px; border-radius:50%; }
 
-        /* ── CONFETTI CANVAS ── */
         .confetti-canvas {
             position: absolute;
             inset: 0;
@@ -267,7 +277,6 @@
             border-radius: 12px;
         }
 
-        /* ── SIDEBAR ── */
         .sidebar {
             width:300px; background:rgba(255,255,255,0.03);
             border-left:1px solid rgba(255,255,255,0.07);
@@ -302,7 +311,6 @@
         .person img { width:34px; height:34px; border-radius:50%; object-fit:cover; }
         .person-name { flex:1; font-size:13px; color:#ddd; }
 
-        /* Commands hint box */
         .cmd-hint {
             background: rgba(124,58,237,0.12);
             border: 1px solid rgba(124,58,237,0.3);
@@ -311,7 +319,6 @@
         }
         .cmd-hint b { color:#e9d5ff; }
 
-        /* ── CONTROLS ── */
         .controls {
             background: #16213e;
             display: flex;
@@ -353,11 +360,6 @@
         }
         .end-btn:hover { background:#b91c1c; }
 
-        /* Mobile drawer */
-        .mobile-drawer-btn { display:none; }
-        .mobile-drawer-overlay { display:none; }
-        .mobile-drawer { display:none; }
-
         @media (max-width:700px) {
             .sidebar { display:none !important; }
             .mobile-drawer-btn { display:flex; flex-direction:column; align-items:center; gap:3px; }
@@ -367,12 +369,7 @@
             .end-btn { width:42px; height:42px; font-size:16px; }
             .top-name { display:none; }
             .topbar { padding:8px 12px; padding-top:max(8px,env(safe-area-inset-top)); }
-
-            .mobile-drawer-overlay {
-                display:block; position:fixed; inset:0;
-                background:rgba(0,0,0,0.55); z-index:200;
-                opacity:0; pointer-events:none; transition:opacity 0.22s;
-            }
+            .mobile-drawer-overlay { display:block; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:200; opacity:0; pointer-events:none; transition:opacity 0.22s; }
             .mobile-drawer-overlay.open { opacity:1; pointer-events:all; }
             .mobile-drawer {
                 display:flex; flex-direction:column;
@@ -419,7 +416,12 @@
         <div id="userDisplay" class="hidden">
             <div class="user-info">
                 <img id="profilePic" class="profile-picture" src="https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png">
-                <div><div class="welcome-text">Welcome, <span class="welcome-name" id="displayName"></span>!</div></div>
+                <div>
+                    <div class="welcome-text">
+                        Welcome, <span class="welcome-name" id="displayName"></span>
+                        <span id="authVerifiedBadge" class="verified-badge auth-verified-badge hidden"></span>!
+                    </div>
+                </div>
             </div>
             <div class="join-online-pill" id="joinOnlinePill" style="display:none">
                 <span class="join-online-dot"></span>
@@ -447,25 +449,13 @@
     </div>
 </div>
 
-<!-- Per-tile fullscreen overlay -->
-<div class="tile-fs-wrap" id="tileFsWrap">
-    <button class="tile-fs-close" id="tileFsClose">✕</button>
-    <video id="tileFsVideo" autoplay playsinline muted></video>
-    <div class="av-overlay hidden" id="tileFsOverlay">
-        <img id="tileFsImg" src="">
-        <span id="tileFsName2"></span>
-    </div>
-    <div class="tile-fs-name" id="tileFsLabel">
-        <img id="tileFsLabelImg" src=""> <span id="tileFsLabelName"></span>
-    </div>
-</div>
-
 <div id="app">
     <div class="topbar">
         <div class="online-pill"><span class="online-dot"></span><span id="onlineCount">1</span> online</div>
         <div class="topbar-right">
             <img id="topAvatar" class="top-avatar" src="">
             <span id="topName" class="top-name"></span>
+            <span id="topVerifiedBadge" class="verified-badge top-verified-badge hidden"></span>
             <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
         </div>
     </div>
@@ -569,8 +559,8 @@ const db   = firebase.firestore();
 // CONSTANTS
 // ─────────────────────────────────────────────
 const HOST_ID  = 'homie-video-room-1';
+const VERIFIED_BADGE_IMG = "https://static.wixstatic.com/media/4145c3_dae40d6d315647a8aa9aa82b02c0ef50~mv2.png";
 
-// ── ICE servers: Google STUN + multiple fallbacks for fast NAT traversal ──
 const ICE_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -587,16 +577,16 @@ const PEER_CFG = {
     path: '/',
     config: {
         iceServers: ICE_SERVERS,
-        iceCandidatePoolSize: 10,  // pre-gather candidates for faster connection
+        iceCandidatePoolSize: 10,
         bundlePolicy: 'max-bundle',
         rtcpMuxPolicy: 'require',
     },
 };
 
-const HEARTBEAT_INTERVAL = 3000;   // faster heartbeat
-const HEARTBEAT_TIMEOUT  = 10000;  // tighter timeout
+const HEARTBEAT_INTERVAL = 3000;
+const HEARTBEAT_TIMEOUT  = 10000;
 const TAKEOVER_DELAY_MIN = 1500;
-const TAKEOVER_DELAY_MAX = 3500;   // faster takeover
+const TAKEOVER_DELAY_MAX = 3500;
 function randomTakeoverDelay(){ return TAKEOVER_DELAY_MIN + Math.random()*(TAKEOVER_DELAY_MAX-TAKEOVER_DELAY_MIN); }
 
 const PICS = {
@@ -620,19 +610,13 @@ const PICS = {
     17:"https://static.wixstatic.com/media/4145c3_949b3293ffbb40a6a02454c5c32f8608~mv2.png",
     18:"https://static.wixstatic.com/media/4145c3_c5569f944b7848baa637f2843c4a320d~mv2.png",
     19:"https://static.wixstatic.com/media/4145c3_1bb59962372746c1806696ee00f65787~mv2.png",
-    20:"https://static.wixstatic.com/media/4145c3_aeed79261da9404982a7db6af712dcb1~mv2.png"   // ← 20th picture added
+    20:"https://static.wixstatic.com/media/4145c3_aeed79261da9404982a7db6af712dcb1~mv2.png"
 };
 
-// ─────────────────────────────────────────────
-// PLATFORM
-// ─────────────────────────────────────────────
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 const isMobile = isIOS || /Android/.test(navigator.userAgent) || window.innerWidth <= 700;
 const screenShareSupported = typeof navigator.mediaDevices?.getDisplayMedia === 'function' && !isIOS;
 
-// ─────────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────────
 let currentUser=null, myName='', myPicUrl=PICS[0], myUid='';
 let lastBannedUser=null, unsubBan=null;
 let localStream=null, originalMicTrack=null;
@@ -640,34 +624,25 @@ let peer=null, isHost=false, myPeerId='';
 let micOn=true, camOn=false, hasVideoPermission=false;
 let screenOn=false, screenStream=null, camWasOnBeforeScreen=false;
 let audioCtx=null, audioMixer=null, micSource=null, screenAudioSource=null, mixedAudioTrack=null;
-
-// participants[id] = { name, pic, stream, muted, hasVideo, isScreenSharing }
 let participants={};
-// connections[guestId] = { conn, call, stream, name, pic, lastPing, relays:{} }
 let connections={};
 let hostConn=null, hostLastPing=0;
 let heartbeatSendTimer=null, heartbeatCheckTimer=null, takeoverTimer=null;
-
-// Camera recovery
 let camRecoveryTimer=null, camRecoveryAttempts=0, camIsRecovering=false;
 const CAM_RECOVERY_MAX=8;
 const CAM_RECOVERY_INTERVALS=[2000,3000,5000,8000,12000,20000,30000,60000];
-
-// Video watchdog
 let videoWatchdogTimer=null;
+let unsubUserDoc = null;   // listener for verified/picture updates
 
-// ─────────────────────────────────────────────
-// UTILS
-// ─────────────────────────────────────────────
 function qs(id){ return document.getElementById(id); }
 function toast(msg){ const t=qs('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function emailOf(u){ return u+'@homiecentre.com'; }
 function hhmm(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function safePic(p){ return PICS[Math.max(0,Math.min(20,parseInt(p)||0))]||PICS[0]; }  // ← now allows 20
+function safePic(p){ return PICS[Math.max(0,Math.min(20,parseInt(p)||0))]||PICS[0]; }
 
 // ─────────────────────────────────────────────
-// BAN
+// BAN (unchanged, same as before)
 // ─────────────────────────────────────────────
 function parseBan(f){
     if(!f) return null;
@@ -711,6 +686,41 @@ function startBanListener(uid,username){
 }
 
 // ─────────────────────────────────────────────
+// VERIFIED BADGE & USER DOCUMENT LISTENER
+// ─────────────────────────────────────────────
+function setVerifiedBadge(visible) {
+    qs('authVerifiedBadge').classList.toggle('hidden', !visible);
+    qs('topVerifiedBadge').classList.toggle('hidden', !visible);
+}
+
+function startUserDocListener(uid) {
+    if (unsubUserDoc) unsubUserDoc();
+    unsubUserDoc = db.collection('users').doc(uid).onSnapshot(doc => {
+        if (!doc.exists) return;
+        const d = doc.data();
+        // Update verified badge
+        setVerifiedBadge(!!d.verified);
+        // Update picture if it changed
+        const newPic = safePic(d.picture || 0);
+        if (newPic !== myPicUrl) {
+            myPicUrl = newPic;
+            qs('profilePic').src = newPic;
+            qs('topAvatar').src = newPic;
+            // if already in call, update own tile
+            if (participants[myPeerId]) {
+                participants[myPeerId].pic = newPic;
+                updateTile(myPeerId);
+            }
+        }
+    }, err => console.error('User doc listener error', err));
+}
+
+function stopUserDocListener() {
+    if (unsubUserDoc) { unsubUserDoc(); unsubUserDoc = null; }
+    setVerifiedBadge(false);
+}
+
+// ─────────────────────────────────────────────
 // AUTH UI
 // ─────────────────────────────────────────────
 function showLoggedIn(username,picUrl){
@@ -728,6 +738,7 @@ function showLoggedIn(username,picUrl){
     qs('app').style.display='none';
 }
 function showLoggedOut(){
+    stopUserDocListener();
     qs('authBtns').classList.remove('hidden');
     qs('userDisplay').classList.add('hidden');
     qs('authMain').style.display='block';
@@ -760,10 +771,17 @@ auth.onAuthStateChanged(async user=>{
             const d=doc.data();myName=d.username;
             const banned=await checkAndHandleBan(user.uid,d.username);if(banned)return;
             showLoggedIn(d.username,safePic(d.picture||0));
+            // Set verified badge from initial data
+            setVerifiedBadge(!!d.verified);
             startBanListener(user.uid,d.username);
             startLobbyCountListener();
+            startUserDocListener(user.uid);
         }catch(e){console.error('auth state err',e);}
-    }else{currentUser=null;myUid='';myName='';showLoggedOut();}
+    }else{
+        currentUser=null;myUid='';myName='';
+        stopUserDocListener();
+        showLoggedOut();
+    }
 });
 
 // ─────────────────────────────────────────────
@@ -800,7 +818,6 @@ async function initMedia(){
 
     micOn=localStream.getAudioTracks().length>0;
     camOn=false;
-    // Start with video off
     localStream.getVideoTracks().forEach(t=>{t.enabled=false;});
     const mic=localStream.getAudioTracks()[0];
     if(mic) originalMicTrack=mic;
@@ -815,7 +832,7 @@ async function initMedia(){
 }
 
 // ─────────────────────────────────────────────
-// CAMERA RECOVERY
+// CAMERA RECOVERY (unchanged)
 // ─────────────────────────────────────────────
 function startCamRecovery(){
     if(camIsRecovering||camRecoveryTimer) return;
@@ -871,17 +888,13 @@ function _broadcastCamStatus(hasVideo){
 }
 
 // ─────────────────────────────────────────────
-// VIDEO WATCHDOG — monitors without thrashing srcObject
+// VIDEO WATCHDOG (unchanged)
 // ─────────────────────────────────────────────
-// Track last srcObject assignment per tile to avoid unnecessary re-assigns
-const tileStreamMap={}; // peerId -> last stream assigned to tile video el
-
+const tileStreamMap={};
 function startVideoWatchdog(){
     if(videoWatchdogTimer) clearInterval(videoWatchdogTimer);
     videoWatchdogTimer=setInterval(async()=>{
         if(!localStream) return;
-
-        // 1. Own camera health check
         if(camOn && !screenOn && localStream){
             const vTracks=localStream.getVideoTracks();
             const allEnded=vTracks.length===0||vTracks.every(t=>t.readyState==='ended');
@@ -889,23 +902,18 @@ function startVideoWatchdog(){
                 console.warn('[watchdog] Camera tracks ended — starting recovery');
                 startCamRecovery();
             }
-            // Update recovering indicator on tile
             const myTile=qs('videoGrid').querySelector(`.vtile[data-peer-id="${myPeerId}"]`);
             if(myTile){
                 const rec=myTile.querySelector('.cam-recovering');
                 if(rec) rec.classList.toggle('show', allEnded);
             }
         }
-
-        // 2. Screen share died check
         if(screenOn && screenStream){
             const vTracks=screenStream.getVideoTracks();
             if(vTracks.length>0&&vTracks.every(t=>t.readyState==='ended')){
                 stopScreenShare();
             }
         }
-
-        // 3. Repair dead senders in peer connections (without touching srcObject)
         if(peer && localStream){
             const vTrack=localStream.getVideoTracks().find(t=>t.enabled&&t.readyState==='live');
             const aTrack=localStream.getAudioTracks().find(t=>t.readyState==='live');
@@ -922,31 +930,24 @@ function startVideoWatchdog(){
                 });
             });
         }
-
-        // 4. Ensure audio elements are active for all remote peers
         Object.entries(participants).forEach(([id,p])=>{
             if(id===myPeerId||!p.stream) return;
             ensureAudioPlaying(p.stream,id);
         });
-
-        // 5. Fix stalled remote video elements — only if srcObject is DIFFERENT from what we last set
         Object.entries(participants).forEach(([id,p])=>{
             if(id===myPeerId||!p.stream||!p.hasVideo) return;
             const tile=qs('videoGrid').querySelector(`.vtile[data-peer-id="${id}"]`);
             if(!tile) return;
             const vid=tile.querySelector('video');
             if(!vid) return;
-            // Only reassign if the stream has changed (e.g. track replaced)
             if(tileStreamMap[id]!==p.stream){
                 vid.srcObject=p.stream;
                 tileStreamMap[id]=p.stream;
                 vid.play().catch(()=>{});
             } else if(vid.readyState<2 && !vid.error){
-                // stalled — nudge without replacing srcObject
                 vid.play().catch(()=>{});
             }
         });
-
     }, 2500);
 }
 
@@ -955,7 +956,7 @@ function stopVideoWatchdog(){
 }
 
 // ─────────────────────────────────────────────
-// HEARTBEAT
+// HEARTBEAT (unchanged)
 // ─────────────────────────────────────────────
 function startHeartbeat(){
     stopHeartbeat();
@@ -977,7 +978,7 @@ function scheduleTakeover(){if(takeoverTimer)return;takeoverTimer=setTimeout(()=
 function cancelTakeover(){if(takeoverTimer){clearTimeout(takeoverTimer);takeoverTimer=null;}}
 
 // ─────────────────────────────────────────────
-// HOST
+// HOST / GUEST (unchanged)
 // ─────────────────────────────────────────────
 function tryBecomeHost(){
     cancelTakeover();stopHeartbeat();
@@ -998,9 +999,6 @@ function tryBecomeHost(){
     });
 }
 
-// ─────────────────────────────────────────────
-// GUEST
-// ─────────────────────────────────────────────
 function joinAsGuest(){
     cancelTakeover();stopHeartbeat();
     if(peer){try{peer.destroy();}catch(e){}peer=null;}
@@ -1017,12 +1015,9 @@ function joinAsGuest(){
             cancelTakeover();startHeartbeat();
             const call=peer.call(HOST_ID,localStream,{metadata:{name:myName,pic:myPicUrl,id:myPeerId}});
             call.on('stream',remoteStream=>{
-                // FIX: ensure audio via separate element, never rely on video srcObject for audio
                 ensureAudioPlaying(remoteStream,HOST_ID);
-                // Only update stream if it's genuinely new
                 if(participants[HOST_ID]) participants[HOST_ID].stream=remoteStream;
                 else participants[HOST_ID]={name:'Host',pic:PICS[0],stream:remoteStream,muted:false,hasVideo:false,isScreenSharing:false};
-                // Update tile without full re-render
                 updateTile(HOST_ID);
             });
             call.on('error',e=>console.error('call-to-host err',e));
@@ -1030,7 +1025,6 @@ function joinAsGuest(){
         hostConn.on('data',handleDataFromHost);
         hostConn.on('close',()=>{stopHeartbeat();scheduleTakeover();});
         hostConn.on('error',e=>console.error('hostConn err',e));
-        // Handle relay calls from host
         peer.on('call',incomingCall=>{
             const meta=incomingCall.metadata||{};
             if(!meta.relay){incomingCall.close();return;}
@@ -1059,11 +1053,9 @@ function joinAsGuest(){
 }
 
 // ─────────────────────────────────────────────
-// AUDIO — separate audio elements, video elements always muted
-// This prevents echo and the "two people sharing one camera" glitch
+// AUDIO (unchanged)
 // ─────────────────────────────────────────────
-const audioElements={}; // peerId -> <audio>
-
+const audioElements={};
 function ensureAudioPlaying(stream,peerId){
     if(!stream||!peerId||peerId===myPeerId) return;
     if(!audioElements[peerId]){
@@ -1076,7 +1068,6 @@ function ensureAudioPlaying(stream,peerId){
         audioElements[peerId]=aud;
     }
     const aud=audioElements[peerId];
-    // Only assign if stream changed — avoids audio glitching
     if(aud.srcObject!==stream){
         aud.srcObject=stream;
         const p=aud.play();
@@ -1097,7 +1088,7 @@ function cleanupAudioElement(peerId){
 }
 
 // ─────────────────────────────────────────────
-// HOST connection handlers
+// HOST connection handlers (unchanged)
 // ─────────────────────────────────────────────
 function onGuestConn(conn){
     const gid=conn.peer, meta=conn.metadata||{};
@@ -1106,7 +1097,6 @@ function onGuestConn(conn){
     connections[gid].name=meta.name||'Guest';
     connections[gid].pic=meta.pic||PICS[0];
     connections[gid].lastPing=Date.now();
-    // Pre-populate participant so tile appears immediately
     if(!participants[gid]){
         participants[gid]={name:meta.name,pic:meta.pic,stream:null,muted:false,hasVideo:false,isScreenSharing:false};
         renderAll();
@@ -1136,18 +1126,15 @@ function onGuestCall(call){
         connections[gid].name=name;
         connections[gid].pic=pic;
         ensureAudioPlaying(guestStream,gid);
-        // Update participant stream — use updateTile (not renderAll) to avoid video crossover
         if(!participants[gid]){
             participants[gid]={name,pic,stream:guestStream,muted:false,hasVideo:false,isScreenSharing:false};
-            renderAll(); // need full render since tile doesn't exist yet
+            renderAll();
         } else {
             participants[gid].stream=guestStream;
             participants[gid].name=name;
             participants[gid].pic=pic;
             updateTile(gid);
         }
-        // Relay: send existing guests to new guest, send new guest to existing guests
-        // Use a small delay to let ICE settle before relaying
         setTimeout(()=>{
             Object.entries(connections).forEach(([oid,other])=>{
                 if(oid===gid||!other.conn?.open) return;
@@ -1166,10 +1153,8 @@ function onGuestCall(call){
     call.on('error',e=>console.error('guest call err',e));
 }
 
-// FIX: Track relay calls to avoid creating duplicates
 function relayTo(targetId,sourceId,sourceName,sourcePic,sourceStream){
     if(!connections[targetId]?.conn?.open) return;
-    // If relay already exists and is open, skip
     if(connections[sourceId]?.relays?.[targetId]){
         const existing=connections[sourceId].relays[targetId];
         if(existing.peerConnection?.connectionState==='connected') return;
@@ -1184,101 +1169,28 @@ function relayTo(targetId,sourceId,sourceName,sourcePic,sourceStream){
 
 function handleDataFromGuest(sid,d){
     switch(d.type){
-        case 'ping':
-            if(connections[sid]) connections[sid].lastPing=Date.now();
-            if(connections[sid]?.conn?.open) try{connections[sid].conn.send({type:'pong',ts:d.ts});}catch(e){}
-            break;
-        case 'pong':
-            if(connections[sid]) connections[sid].lastPing=Date.now();
-            break;
-        case 'mute-status':
-            if(participants[sid]) participants[sid].muted=d.muted;
-            updateTile(sid);
-            broadcastExcept({type:'mute-status',id:sid,muted:d.muted},sid);
-            break;
-        case 'cam-status':
-            if(participants[sid]) participants[sid].hasVideo=d.hasVideo;
-            updateTile(sid);
-            broadcastExcept({type:'cam-status',id:sid,hasVideo:d.hasVideo},sid);
-            break;
-        case 'screen-status':
-            if(participants[sid]) participants[sid].isScreenSharing=d.isScreenSharing;
-            updateTile(sid);
-            broadcastExcept({type:'screen-status',id:sid,isScreenSharing:d.isScreenSharing},sid);
-            break;
-        case 'chat':
-            broadcastAll({type:'chat',name:d.name,text:d.text,time:d.time});
-            addMsg(d.name,d.text,d.time,false);
-            break;
-        case 'fun-effect':
-            broadcastAll({type:'fun-effect',effect:d.effect,senderName:d.senderName});
-            applyFunEffect(d.effect,d.senderName);
-            break;
+        case 'ping': if(connections[sid]) connections[sid].lastPing=Date.now(); if(connections[sid]?.conn?.open) try{connections[sid].conn.send({type:'pong',ts:d.ts});}catch(e){} break;
+        case 'pong': if(connections[sid]) connections[sid].lastPing=Date.now(); break;
+        case 'mute-status': if(participants[sid]) participants[sid].muted=d.muted; updateTile(sid); broadcastExcept({type:'mute-status',id:sid,muted:d.muted},sid); break;
+        case 'cam-status': if(participants[sid]) participants[sid].hasVideo=d.hasVideo; updateTile(sid); broadcastExcept({type:'cam-status',id:sid,hasVideo:d.hasVideo},sid); break;
+        case 'screen-status': if(participants[sid]) participants[sid].isScreenSharing=d.isScreenSharing; updateTile(sid); broadcastExcept({type:'screen-status',id:sid,isScreenSharing:d.isScreenSharing},sid); break;
+        case 'chat': broadcastAll({type:'chat',name:d.name,text:d.text,time:d.time}); addMsg(d.name,d.text,d.time,false); break;
+        case 'fun-effect': broadcastAll({type:'fun-effect',effect:d.effect,senderName:d.senderName}); applyFunEffect(d.effect,d.senderName); break;
     }
 }
 
 function handleDataFromHost(d){
     switch(d.type){
-        case 'ping':
-            hostLastPing=Date.now();
-            if(hostConn?.open) try{hostConn.send({type:'pong',ts:d.ts});}catch(e){}
-            break;
-        case 'pong':
-            hostLastPing=Date.now();
-            break;
-        case 'init':
-            d.participants.forEach(p=>{
-                if(p.id!==myPeerId){
-                    if(!participants[p.id]){
-                        participants[p.id]={name:p.name,pic:p.pic,stream:null,muted:p.muted,hasVideo:p.hasVideo,isScreenSharing:p.isScreenSharing||false};
-                    } else {
-                        participants[p.id].name=p.name;
-                        participants[p.id].pic=p.pic;
-                        participants[p.id].muted=p.muted;
-                        participants[p.id].hasVideo=p.hasVideo;
-                        participants[p.id].isScreenSharing=p.isScreenSharing||false;
-                    }
-                }
-            });
-            renderAll();
-            break;
-        case 'joined':
-            if(d.participant.id!==myPeerId){
-                if(!participants[d.participant.id]){
-                    participants[d.participant.id]={name:d.participant.name,pic:d.participant.pic,stream:null,muted:false,hasVideo:false,isScreenSharing:false};
-                    renderAll();
-                }
-                addSysMsg(`${d.participant.name} joined`);
-            }
-            break;
-        case 'left':
-            if(d.id!==myPeerId){
-                delete participants[d.id];
-                cleanupAudioElement(d.id);
-                removeTile(d.id);
-                updatePeopleList();
-                updateOnlineCount();
-                addSysMsg(`${d.name} left`);
-            }
-            break;
-        case 'mute-status':
-            if(participants[d.id]) participants[d.id].muted=d.muted;
-            updateTile(d.id);
-            break;
-        case 'cam-status':
-            if(participants[d.id]) participants[d.id].hasVideo=d.hasVideo;
-            updateTile(d.id);
-            break;
-        case 'screen-status':
-            if(participants[d.id]) participants[d.id].isScreenSharing=d.isScreenSharing;
-            updateTile(d.id);
-            break;
-        case 'chat':
-            if(d.name!==myName) addMsg(d.name,d.text,d.time,false);
-            break;
-        case 'fun-effect':
-            applyFunEffect(d.effect,d.senderName);
-            break;
+        case 'ping': hostLastPing=Date.now(); if(hostConn?.open) try{hostConn.send({type:'pong',ts:d.ts});}catch(e){} break;
+        case 'pong': hostLastPing=Date.now(); break;
+        case 'init': d.participants.forEach(p=>{ if(p.id!==myPeerId){ if(!participants[p.id]){ participants[p.id]={name:p.name,pic:p.pic,stream:null,muted:p.muted,hasVideo:p.hasVideo,isScreenSharing:p.isScreenSharing||false}; } else { participants[p.id].name=p.name; participants[p.id].pic=p.pic; participants[p.id].muted=p.muted; participants[p.id].hasVideo=p.hasVideo; participants[p.id].isScreenSharing=p.isScreenSharing||false; } } }); renderAll(); break;
+        case 'joined': if(d.participant.id!==myPeerId){ if(!participants[d.participant.id]){ participants[d.participant.id]={name:d.participant.name,pic:d.participant.pic,stream:null,muted:false,hasVideo:false,isScreenSharing:false}; renderAll(); } addSysMsg(`${d.participant.name} joined`); } break;
+        case 'left': if(d.id!==myPeerId){ delete participants[d.id]; cleanupAudioElement(d.id); removeTile(d.id); updatePeopleList(); updateOnlineCount(); addSysMsg(`${d.name} left`); } break;
+        case 'mute-status': if(participants[d.id]) participants[d.id].muted=d.muted; updateTile(d.id); break;
+        case 'cam-status': if(participants[d.id]) participants[d.id].hasVideo=d.hasVideo; updateTile(d.id); break;
+        case 'screen-status': if(participants[d.id]) participants[d.id].isScreenSharing=d.isScreenSharing; updateTile(d.id); break;
+        case 'chat': if(d.name!==myName) addMsg(d.name,d.text,d.time,false); break;
+        case 'fun-effect': applyFunEffect(d.effect,d.senderName); break;
     }
 }
 
@@ -1299,7 +1211,7 @@ function removeGuest(gid){
 }
 
 // ─────────────────────────────────────────────
-// LOBBY COUNT
+// LOBBY COUNT (unchanged)
 // ─────────────────────────────────────────────
 let unsubLobbyCount=null;
 function startLobbyCountListener(){
@@ -1317,7 +1229,7 @@ function pushOnlineCount(){
 }
 
 // ─────────────────────────────────────────────
-// PER-TILE ZOOM
+// PER-TILE ZOOM (unchanged)
 // ─────────────────────────────────────────────
 let tileFsPeerId=null;
 let tileFsAudioEl=null;
@@ -1366,7 +1278,7 @@ qs('tileFsClose').onclick=closeTileFs;
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&tileFsPeerId)closeTileFs();});
 
 // ─────────────────────────────────────────────
-// CONFETTI ENGINE
+// CONFETTI ENGINE (unchanged)
 // ─────────────────────────────────────────────
 const confettiColors=['#f94144','#f3722c','#f8961e','#f9c74f','#90be6d','#43aa8b','#577590','#e63946','#a8dadc','#457b9d','#e9c46a','#f4a261'];
 
@@ -1413,7 +1325,7 @@ function launchConfettiOnTile(tile){
 function launchConfettiOnAllTiles(){document.querySelectorAll('.vtile').forEach(tile=>launchConfettiOnTile(tile));}
 
 // ─────────────────────────────────────────────
-// GRID LAYOUT
+// GRID LAYOUT (unchanged)
 // ─────────────────────────────────────────────
 function applyGridLayout(grid,n){
     const mob=window.innerWidth<=700;
@@ -1434,20 +1346,14 @@ function applyGridLayout(grid,n){
 }
 
 // ─────────────────────────────────────────────
-// RENDER — DIFF-BASED to prevent stream crossover bugs
-// Only renderAll() when participant list changes (join/leave).
-// For attribute changes (mute, cam, screen) use updateTile().
+// RENDER (unchanged)
 // ─────────────────────────────────────────────
-
-const TILE_ORDER_KEY = '__tileOrder'; // tracks last rendered order
-
 function getOrdered(){
     const ids=Object.keys(participants);
     if(!ids.includes(myPeerId)) return ids;
     return [myPeerId,...ids.filter(id=>id!==myPeerId)];
 }
 
-// Full re-render — called when participant list changes
 function renderAll(){
     const grid=qs('videoGrid');
     const ordered=getOrdered();
@@ -1465,10 +1371,9 @@ function renderAll(){
 
     applyGridLayout(grid,n);
     const areaLetters=['a','b','c','d','e','f','g','h'];
-    const hasAreas=!!(grid.style.gridTemplateAreas&&grid.style.gridTemplateAreas!=='none'&&grid.style.gridTemplateAreas!=='');
+    const hasAreas=!!(grid.style.gridTemplateAreas&&grid.style.gridTemplateAreas!=='none');
     const useSpotlight=n>=3&&n<=8;
 
-    // Remove tiles for gone participants
     const existingTiles=grid.querySelectorAll('.vtile[data-peer-id]');
     existingTiles.forEach(tile=>{
         if(!participants[tile.dataset.peerId]) tile.remove();
@@ -1480,12 +1385,9 @@ function renderAll(){
         const isSpotlight=isMe&&useSpotlight&&hasAreas;
         const isSharing=isMe?screenOn:(p.isScreenSharing||false);
 
-        // Check if tile already exists
         let tile=grid.querySelector(`.vtile[data-peer-id="${id}"]`);
         if(!tile){
-            // Create new tile
             tile=createTileElement(id,p,isMe,isSpotlight,isSharing,idx,areaLetters,hasAreas);
-            // Insert in correct position
             const allTiles=grid.querySelectorAll('.vtile[data-peer-id]');
             if(idx===0||allTiles.length===0){
                 grid.insertBefore(tile, grid.firstChild);
@@ -1495,7 +1397,6 @@ function renderAll(){
                 else grid.appendChild(tile);
             }
         } else {
-            // Update grid area and classes only
             if(hasAreas&&idx<areaLetters.length) tile.style.gridArea=areaLetters[idx];
             tile.className='vtile'+(isSpotlight?' spotlight':'')+(isSharing?' screensharing':'');
             updateTileContent(tile,id,p,isMe,isSharing);
@@ -1503,8 +1404,6 @@ function renderAll(){
     });
 
     updatePeopleList();
-
-    // Refresh fullscreen overlay if open
     if(tileFsPeerId&&participants[tileFsPeerId]) openTileFs(tileFsPeerId);
 }
 
@@ -1513,66 +1412,29 @@ function createTileElement(id,p,isMe,isSpotlight,isSharing,idx,areaLetters,hasAr
     tile.className='vtile'+(isSpotlight?' spotlight':'')+(isSharing?' screensharing':'');
     tile.dataset.peerId=id;
     if(hasAreas&&idx<areaLetters.length) tile.style.gridArea=areaLetters[idx];
-
-    // Video or avatar
     const mediaWrap=buildMedia(id,p,isMe);
     tile.appendChild(mediaWrap);
-
-    // Screen badge
-    const sb=document.createElement('div');
-    sb.className='screen-badge'+(isSharing?' show':'');
-    sb.textContent='Screen';
-    tile.appendChild(sb);
-
-    // Name label
+    const sb=document.createElement('div'); sb.className='screen-badge'+(isSharing?' show':''); sb.textContent='Screen'; tile.appendChild(sb);
     tile.appendChild(buildNameLabel(id,p,isMe));
-
-    // Mute icon
-    const mb=document.createElement('div');
-    mb.className='mute-icon'+(p.muted?' show':'');
-    mb.textContent='🔇';
-    tile.appendChild(mb);
-
-    // Cam recovering (own tile only)
+    const mb=document.createElement('div'); mb.className='mute-icon'+(p.muted?' show':''); mb.textContent='🔇'; tile.appendChild(mb);
     if(isMe){
-        const rec=document.createElement('div');
-        rec.className='cam-recovering'+(camIsRecovering?' show':'');
-        rec.innerHTML='<span class="spin-icon">↻</span> Reconnecting...';
-        tile.appendChild(rec);
+        const rec=document.createElement('div'); rec.className='cam-recovering'+(camIsRecovering?' show':''); rec.innerHTML='<span class="spin-icon">↻</span> Reconnecting...'; tile.appendChild(rec);
     }
-
-    // Zoom button
-    const zb=document.createElement('button');
-    zb.className='zoom-btn';
-    zb.title='View fullscreen';
-    zb.innerHTML='⛶';
-    if(p.muted) zb.classList.add('muted-shift');
-    zb.onclick=(e)=>{e.stopPropagation();openTileFs(id);};
-    tile.appendChild(zb);
-
+    const zb=document.createElement('button'); zb.className='zoom-btn'; zb.title='View fullscreen'; zb.innerHTML='⛶'; if(p.muted) zb.classList.add('muted-shift'); zb.onclick=(e)=>{e.stopPropagation();openTileFs(id);}; tile.appendChild(zb);
     return tile;
 }
 
-// FIX: Build media element — video elements are ALWAYS muted (audio via separate <audio>)
 function buildMedia(id,p,isMe){
     const showVid=shouldShowVideo(id,p,isMe);
     if(showVid){
         const stream=isMe?localStream:p.stream;
-        const vid=document.createElement('video');
-        vid.autoplay=true; vid.playsInline=true; vid.muted=true; // ALWAYS muted
-        vid.srcObject=stream;
-        vid.onloadedmetadata=()=>vid.play().catch(()=>{});
-        tileStreamMap[id]=stream;
+        const vid=document.createElement('video'); vid.autoplay=true; vid.playsInline=true; vid.muted=true; vid.srcObject=stream; vid.onloadedmetadata=()=>vid.play().catch(()=>{}); tileStreamMap[id]=stream;
         if(!isMe&&stream) ensureAudioPlaying(stream,id);
         return vid;
     } else {
         const ov=document.createElement('div'); ov.className='av-overlay';
-        const img=document.createElement('img');
-        img.src=isMe?myPicUrl:(p.pic||PICS[0]);
-        img.onerror=()=>img.src=PICS[0];
-        const nm=document.createElement('span');
-        nm.textContent=p.name+(isMe?' (you)':'');
-        ov.append(img,nm);
+        const img=document.createElement('img'); img.src=isMe?myPicUrl:(p.pic||PICS[0]); img.onerror=()=>img.src=PICS[0];
+        const nm=document.createElement('span'); nm.textContent=p.name+(isMe?' (you)':''); ov.append(img,nm);
         if(!isMe&&p.stream) ensureAudioPlaying(p.stream,id);
         return ov;
     }
@@ -1589,24 +1451,15 @@ function shouldShowVideo(id,p,isMe){
 
 function buildNameLabel(id,p,isMe){
     const lbl=document.createElement('div'); lbl.className='name-label';
-    const limg=document.createElement('img');
-    limg.src=isMe?myPicUrl:(p.pic||PICS[0]);
-    limg.onerror=()=>limg.src=PICS[0];
-    lbl.append(limg,document.createTextNode(p.name+(isMe?' (you)':'')));
-    return lbl;
+    const limg=document.createElement('img'); limg.src=isMe?myPicUrl:(p.pic||PICS[0]); limg.onerror=()=>limg.src=PICS[0];
+    lbl.append(limg,document.createTextNode(p.name+(isMe?' (you)':''))); return lbl;
 }
 
-// Update a single tile's content without replacing the whole element
-// This prevents stream crossover — the video srcObject is preserved
 function updateTile(id){
     if(!id||!participants[id]) return;
     const grid=qs('videoGrid');
     const tile=grid.querySelector(`.vtile[data-peer-id="${id}"]`);
-    if(!tile){
-        // Tile doesn't exist yet, need full re-render
-        renderAll();
-        return;
-    }
+    if(!tile){ renderAll(); return; }
     const p=participants[id];
     const isMe=(id===myPeerId);
     const isSharing=isMe?screenOn:(p.isScreenSharing||false);
@@ -1620,7 +1473,6 @@ function updateTile(id){
 
     tile.className='vtile'+(isSpotlight?' spotlight':'')+(isSharing?' screensharing':'');
     if(hasAreas&&idx<areaLetters.length) tile.style.gridArea=areaLetters[idx];
-
     updateTileContent(tile,id,p,isMe,isSharing);
     updatePeopleList();
     if(tileFsPeerId===id&&participants[id]) openTileFs(id);
@@ -1629,83 +1481,46 @@ function updateTile(id){
 function updateTileContent(tile,id,p,isMe,isSharing){
     const showVid=shouldShowVideo(id,p,isMe);
     const stream=isMe?localStream:p.stream;
-
-    // Handle video vs avatar — try to keep existing video element if possible
     const existingVid=tile.querySelector('video');
     const existingOv=tile.querySelector('.av-overlay');
 
     if(showVid&&stream){
         if(existingOv){existingOv.remove();}
         if(!existingVid){
-            const vid=document.createElement('video');
-            vid.autoplay=true; vid.playsInline=true; vid.muted=true;
-            vid.srcObject=stream;
-            vid.onloadedmetadata=()=>vid.play().catch(()=>{});
-            tile.insertBefore(vid,tile.firstChild);
-            tileStreamMap[id]=stream;
+            const vid=document.createElement('video'); vid.autoplay=true; vid.playsInline=true; vid.muted=true; vid.srcObject=stream; vid.onloadedmetadata=()=>vid.play().catch(()=>{}); tile.insertBefore(vid,tile.firstChild); tileStreamMap[id]=stream;
         } else {
-            // Only update srcObject if stream actually changed
-            if(tileStreamMap[id]!==stream){
-                existingVid.srcObject=stream;
-                existingVid.play().catch(()=>{});
-                tileStreamMap[id]=stream;
-            }
+            if(tileStreamMap[id]!==stream){ existingVid.srcObject=stream; existingVid.play().catch(()=>{}); tileStreamMap[id]=stream; }
         }
         if(!isMe&&stream) ensureAudioPlaying(stream,id);
     } else {
         if(existingVid){existingVid.remove();delete tileStreamMap[id];}
         if(!existingOv){
             const ov=document.createElement('div'); ov.className='av-overlay';
-            const img=document.createElement('img');
-            img.src=isMe?myPicUrl:(p.pic||PICS[0]);
-            img.onerror=()=>img.src=PICS[0];
-            const nm=document.createElement('span');
-            nm.textContent=p.name+(isMe?' (you)':'');
-            ov.append(img,nm);
-            tile.insertBefore(ov,tile.firstChild);
+            const img=document.createElement('img'); img.src=isMe?myPicUrl:(p.pic||PICS[0]); img.onerror=()=>img.src=PICS[0];
+            const nm=document.createElement('span'); nm.textContent=p.name+(isMe?' (you)':''); ov.append(img,nm); tile.insertBefore(ov,tile.firstChild);
         } else {
-            const img=existingOv.querySelector('img');
-            const nm=existingOv.querySelector('span');
-            if(img) img.src=isMe?myPicUrl:(p.pic||PICS[0]);
-            if(nm) nm.textContent=p.name+(isMe?' (you)':'');
+            const img=existingOv.querySelector('img'); const nm=existingOv.querySelector('span');
+            if(img) img.src=isMe?myPicUrl:(p.pic||PICS[0]); if(nm) nm.textContent=p.name+(isMe?' (you)':'');
         }
         if(!isMe&&p.stream) ensureAudioPlaying(p.stream,id);
     }
 
-    // Update screen badge
-    const sb=tile.querySelector('.screen-badge');
-    if(sb) sb.className='screen-badge'+(isSharing?' show':'');
-
-    // Update mute icon
-    const mb=tile.querySelector('.mute-icon');
-    if(mb) mb.className='mute-icon'+(p.muted?' show':'');
-
-    // Update zoom button muted-shift
-    const zb=tile.querySelector('.zoom-btn');
-    if(zb) zb.className='zoom-btn'+(p.muted?' muted-shift':'');
-
-    // Update cam-recovering indicator
-    if(isMe){
-        const rec=tile.querySelector('.cam-recovering');
-        if(rec) rec.className='cam-recovering'+(camIsRecovering?' show':'');
-    }
+    const sb=tile.querySelector('.screen-badge'); if(sb) sb.className='screen-badge'+(isSharing?' show':'');
+    const mb=tile.querySelector('.mute-icon'); if(mb) mb.className='mute-icon'+(p.muted?' show':'');
+    const zb=tile.querySelector('.zoom-btn'); if(zb) zb.className='zoom-btn'+(p.muted?' muted-shift':'');
+    if(isMe){ const rec=tile.querySelector('.cam-recovering'); if(rec) rec.className='cam-recovering'+(camIsRecovering?' show':''); }
 }
 
 function removeTile(id){
     const tile=qs('videoGrid').querySelector(`.vtile[data-peer-id="${id}"]`);
     if(tile) tile.remove();
     delete tileStreamMap[id];
-    // Reapply layout
     const ordered=getOrdered();
     applyGridLayout(qs('videoGrid'),ordered.length);
     updateOnlineCount();
 }
 
-function updateOnlineCount(){
-    const n=Object.keys(participants).length;
-    qs('onlineCount').textContent=n;
-    pushOnlineCount();
-}
+function updateOnlineCount(){ const n=Object.keys(participants).length; qs('onlineCount').textContent=n; pushOnlineCount(); }
 
 function updatePeopleList(){
     const ordered=getOrdered();
@@ -1716,17 +1531,12 @@ function updatePeopleList(){
             const isMe=(id===myPeerId);
             const isSharing=isMe?screenOn:(p.isScreenSharing||false);
             const pi=document.createElement('div'); pi.className='person';
-            const pimg=document.createElement('img');
-            pimg.src=isMe?myPicUrl:(p.pic||PICS[0]);
-            pimg.onerror=()=>pimg.src=PICS[0];
-            const pn=document.createElement('span'); pn.className='person-name';
-            pn.textContent=p.name+(isMe?' (you)':'')+(isSharing?' [Screen]':'');
-            pi.append(pimg,pn);
-            container.appendChild(pi);
+            const pimg=document.createElement('img'); pimg.src=isMe?myPicUrl:(p.pic||PICS[0]); pimg.onerror=()=>pimg.src=PICS[0];
+            const pn=document.createElement('span'); pn.className='person-name'; pn.textContent=p.name+(isMe?' (you)':'')+(isSharing?' [Screen]':'');
+            pi.append(pimg,pn); container.appendChild(pi);
         });
     }
-    buildList(qs('peopleList'));
-    buildList(qs('drawerPeopleList'));
+    buildList(qs('peopleList')); buildList(qs('drawerPeopleList'));
 }
 
 window.addEventListener('resize',()=>{
@@ -1737,14 +1547,13 @@ window.addEventListener('resize',()=>{
 });
 
 // ─────────────────────────────────────────────
-// FUN EFFECTS
+// FUN EFFECTS (unchanged)
 // ─────────────────────────────────────────────
 const EFFECTS={
     '/confetti':   {type:'confetti'},
     '/barrelroll': {cls:'barrel-rolling',dur:700},
     '/spring':     {cls:'spring-bouncing',dur:850},
 };
-
 (function injectAnimCSS(){
     const s=document.createElement('style');
     s.textContent=`
@@ -1767,9 +1576,7 @@ function applyFunEffect(cmd,senderName){
     addCmdMsg(`${senderName} used ${cmd}`);
     if(ef.type==='confetti'){launchConfettiOnAllTiles();return;}
     document.querySelectorAll('.vtile').forEach(tile=>{
-        tile.classList.remove(ef.cls);
-        void tile.offsetWidth;
-        tile.classList.add(ef.cls);
+        tile.classList.remove(ef.cls); void tile.offsetWidth; tile.classList.add(ef.cls);
         setTimeout(()=>tile.classList.remove(ef.cls),ef.dur);
     });
 }
@@ -1782,7 +1589,7 @@ function sendFunEffect(cmd){
 }
 
 // ─────────────────────────────────────────────
-// CHAT
+// CHAT (unchanged)
 // ─────────────────────────────────────────────
 function addMsg(name,text,time,isMe){
     function make(){
@@ -1823,7 +1630,7 @@ qs('drawerChatIn').onkeypress=e=>{if(e.key==='Enter')sendChat();};
 qs('drawerSendBtn').onclick=sendChat;
 
 // ─────────────────────────────────────────────
-// REPLACE TRACK IN PEERS
+// REPLACE TRACK IN PEERS (unchanged)
 // ─────────────────────────────────────────────
 function replaceTrackInPeers(newTrack,kind){
     if(!peer||!newTrack) return;
@@ -1831,22 +1638,18 @@ function replaceTrackInPeers(newTrack,kind){
         if(!Array.isArray(arr)) return;
         arr.forEach(conn=>{
             if(conn.type==='media'&&conn.peerConnection){
-                // FIX: Replace ALL senders of this kind, not just first
                 conn.peerConnection.getSenders()
                     .filter(s=>s.track&&s.track.kind===kind)
                     .forEach(s=>s.replaceTrack(newTrack).catch(e=>console.warn('replaceTrack err',e)));
-                // Also add track if no sender for this kind exists
                 const hasSender=conn.peerConnection.getSenders().some(s=>s.track&&s.track.kind===kind);
-                if(!hasSender){
-                    try{conn.peerConnection.addTrack(newTrack);}catch(e){}
-                }
+                if(!hasSender){ try{conn.peerConnection.addTrack(newTrack);}catch(e){} }
             }
         });
     });
 }
 
 // ─────────────────────────────────────────────
-// MIC TOGGLE
+// MIC TOGGLE (unchanged)
 // ─────────────────────────────────────────────
 function toggleMic(){
     micOn=!micOn;
@@ -1864,7 +1667,7 @@ function toggleMic(){
 }
 
 // ─────────────────────────────────────────────
-// CAMERA TOGGLE
+// CAMERA TOGGLE (unchanged)
 // ─────────────────────────────────────────────
 async function toggleCam(){
     if(screenOn){toast('Stop screen sharing first');return;}
@@ -1898,7 +1701,6 @@ async function toggleCam(){
         camOn=false;
         localStream.getVideoTracks().forEach(t=>{t.enabled=false;});
     }
-
     if(participants[myPeerId]){participants[myPeerId].hasVideo=camOn;participants[myPeerId].stream=localStream;}
     updateTile(myPeerId);
     updateCtrlBtns();
@@ -1906,7 +1708,7 @@ async function toggleCam(){
 }
 
 // ─────────────────────────────────────────────
-// SCREEN SHARE
+// SCREEN SHARE (unchanged)
 // ─────────────────────────────────────────────
 function createAudioMixer(micTrack,screenAudioTrack){
     audioCtx=new(window.AudioContext||window.webkitAudioContext)();
@@ -1926,10 +1728,7 @@ function createAudioMixer(micTrack,screenAudioTrack){
     mixedAudioTrack._isMixedAudio=true;
     return mixedAudioTrack;
 }
-function teardownAudioMixer(){
-    try{if(audioCtx)audioCtx.close();}catch(e){}
-    audioCtx=null;audioMixer=null;micSource=null;screenAudioSource=null;mixedAudioTrack=null;
-}
+function teardownAudioMixer(){ try{if(audioCtx)audioCtx.close();}catch(e){} audioCtx=null;audioMixer=null;micSource=null;screenAudioSource=null;mixedAudioTrack=null; }
 
 async function toggleScreen(){
     if(!screenShareSupported){toast(isIOS?'Screen sharing not supported on iOS':'Screen sharing not supported');return;}
@@ -1964,7 +1763,6 @@ async function startScreenShare(){
     replaceTrackInPeers(svt,'video');
     setTimeout(()=>replaceTrackInPeers(svt,'video'),500);
     svt.onended=()=>{if(screenOn)stopScreenShare();};
-    // FIX: don't set camOn=true during screen share — it's a separate state
     if(participants[myPeerId]){participants[myPeerId].hasVideo=true;participants[myPeerId].isScreenSharing=true;participants[myPeerId].stream=localStream;}
     updateTile(myPeerId);
     updateCtrlBtns();
@@ -1977,7 +1775,6 @@ async function stopScreenShare(){
     if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
     teardownAudioMixer();
     localStream.getAudioTracks().forEach(t=>localStream.removeTrack(t));
-    // Restore mic
     if(originalMicTrack&&originalMicTrack.readyState!=='ended'){
         localStream.addTrack(originalMicTrack);
         originalMicTrack.enabled=micOn;
@@ -1989,13 +1786,10 @@ async function stopScreenShare(){
             if(nm){originalMicTrack=nm;nm.enabled=micOn;localStream.addTrack(nm);replaceTrackInPeers(nm,'audio');}
         }catch(e){}
     }
-    // Restore camera
     localStream.getVideoTracks().forEach(t=>localStream.removeTrack(t));
     if(hasVideoPermission&&camWasOnBeforeScreen){
         try{
-            let fs;
-            try{fs=await navigator.mediaDevices.getUserMedia({video:isMobile?{facingMode:'user'}:true,audio:false});}
-            catch(e){fs=await navigator.mediaDevices.getUserMedia({video:true,audio:false});}
+            let fs; try{fs=await navigator.mediaDevices.getUserMedia({video:isMobile?{facingMode:'user'}:true,audio:false});} catch(e){fs=await navigator.mediaDevices.getUserMedia({video:true,audio:false});}
             const ct=fs.getVideoTracks()[0];
             if(ct){ct.enabled=true;localStream.addTrack(ct);replaceTrackInPeers(ct,'video');setTimeout(()=>replaceTrackInPeers(ct,'video'),400);camOn=true;}
             else camOn=false;
@@ -2018,13 +1812,12 @@ function broadcastScreenStatus(v){
 }
 
 // ─────────────────────────────────────────────
-// CONTROLS UPDATE
+// CONTROLS UPDATE (unchanged)
 // ─────────────────────────────────────────────
 function updateCtrlBtns(){
     const m=qs('micBtn'),c=qs('camBtn'),s=qs('screenBtn');
     m.className='toggle-pill '+(micOn?'state-on':'state-off');
     qs('micState').textContent=micOn?'ON':'OFF';
-    // FIX: camBtn shows ON only when camera is on AND not screen sharing
     const camActive=camOn&&!screenOn;
     c.className='toggle-pill '+(camActive?'state-on':'state-off');
     qs('camState').textContent=camActive?'ON':'OFF';
@@ -2070,7 +1863,7 @@ qs('screenBtn').onclick=toggleScreen;
 qs('endBtn').onclick=exitCall;
 
 // ─────────────────────────────────────────────
-// TABS
+// TABS (unchanged)
 // ─────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab=>{
     tab.onclick=()=>{
@@ -2083,7 +1876,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
 });
 
 // ─────────────────────────────────────────────
-// MOBILE DRAWER
+// MOBILE DRAWER (unchanged)
 // ─────────────────────────────────────────────
 function openDrawer(){qs('mobileDrawer').classList.add('open');qs('drawerOverlay').classList.add('open');}
 function closeDrawer(){qs('mobileDrawer').classList.remove('open');qs('drawerOverlay').classList.remove('open');}
@@ -2101,7 +1894,7 @@ document.querySelectorAll('.drawer-tab').forEach(tab=>{
 });
 
 // ─────────────────────────────────────────────
-// FULLSCREEN
+// FULLSCREEN (unchanged)
 // ─────────────────────────────────────────────
 qs('fullscreenBtn').onclick=()=>{
     const el=qs('app');
