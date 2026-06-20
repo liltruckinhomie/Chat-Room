@@ -66,8 +66,25 @@
         .main-buttons { margin-top:8px; }
         .user-info { display:flex; align-items:center; gap:10px; margin:8px 0 14px; }
         .profile-picture { width:48px; height:48px; border-radius:50%; object-fit:cover; border:2px solid #1877f2; flex-shrink:0; }
-        .welcome-text { font-size:18px; font-weight:600; color:#222; }
-        .welcome-name { color:#1877f2; }
+        .welcome-group {
+            display: inline-flex;
+            align-items: center;
+            font-size: 18px;
+            font-weight: 600;
+            color: #222;
+            white-space: nowrap;
+            transform-origin: left center;
+            line-height: 1.2;
+        }
+        .welcome-group .username-container {
+            display: inline-block;
+            vertical-align: middle;
+            color: #1877f2;
+        }
+        .welcome-group .verified-badge {
+            width: 18px;
+            height: 18px;
+        }
         .join-btn {
             width:100%; padding:10px; margin:4px 0;
             background: linear-gradient(145deg,#4285F4,#1a73e8);
@@ -171,6 +188,7 @@
             background:#1c1c2e; gap:10px;
         }
         .vtile .av-overlay img { width:80px; height:80px; border-radius:50%; border:3px solid #1877f2; object-fit:cover; }
+        .vtile .av-overlay .av-name-row { display:flex; align-items:center; justify-content:center; gap:4px; }
         .vtile .av-overlay span { color:#ccc; font-size:13px; font-weight:500; }
         .vtile.spotlight .av-overlay img { width:110px; height:110px; }
         .vtile.spotlight .av-overlay span { font-size:15px; }
@@ -431,7 +449,12 @@
         <div id="userDisplay" class="hidden">
             <div class="user-info">
                 <img id="profilePic" class="profile-picture" src="https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png">
-                <div><div class="welcome-text">Welcome, <span class="welcome-name" id="displayName"></span><span id="welcomeVerifiedBadge" class="verified-badge hidden"></span>!</div></div>
+                <div class="welcome-group" id="welcomeGroup">
+                    <span>Welcome, </span>
+                    <span class="username-container"><span id="displayName"></span></span>
+                    <span id="welcomeVerifiedBadge" class="verified-badge hidden"></span>
+                    <span>!</span>
+                </div>
             </div>
             <div class="join-online-pill" id="joinOnlinePill" style="display:none">
                 <span class="join-online-dot"></span>
@@ -582,7 +605,6 @@ const db   = firebase.firestore();
 // ─────────────────────────────────────────────
 const HOST_ID  = 'homie-video-room-1';
 
-// ── ICE servers: Google STUN + multiple fallbacks for fast NAT traversal ──
 const ICE_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -655,19 +677,15 @@ let micOn=true, camOn=false, hasVideoPermission=false;
 let screenOn=false, screenStream=null, camWasOnBeforeScreen=false;
 let audioCtx=null, audioMixer=null, micSource=null, screenAudioSource=null, mixedAudioTrack=null;
 
-// participants[id] = { name, pic, stream, muted, hasVideo, isScreenSharing, verified }
 let participants={};
-// connections[guestId] = { conn, call, stream, name, pic, lastPing, relays:{}, verified }
 let connections={};
 let hostConn=null, hostLastPing=0;
 let heartbeatSendTimer=null, heartbeatCheckTimer=null, takeoverTimer=null;
 
-// Camera recovery
 let camRecoveryTimer=null, camRecoveryAttempts=0, camIsRecovering=false;
 const CAM_RECOVERY_MAX=8;
 const CAM_RECOVERY_INTERVALS=[2000,3000,5000,8000,12000,20000,30000,60000];
 
-// Video watchdog
 let videoWatchdogTimer=null;
 
 // ─────────────────────────────────────────────
@@ -727,6 +745,21 @@ function startBanListener(uid,username){
 // ─────────────────────────────────────────────
 // AUTH UI
 // ─────────────────────────────────────────────
+function adjustWelcomeText() {
+    const group = qs('welcomeGroup');
+    if (!group || qs('userDisplay').classList.contains('hidden')) return;
+    const container = qs('authMain');
+    const maxWidth = container.offsetWidth - 90; // leave room for picture + padding
+    group.style.transform = 'none';
+    group.style.fontSize = '18px';
+    // force a reflow to get correct scrollWidth
+    if (group.scrollWidth > maxWidth) {
+        const scale = maxWidth / group.scrollWidth;
+        group.style.transform = `scale(${scale})`;
+        group.style.display = 'inline-flex';
+    }
+}
+
 function showLoggedIn(username,picUrl,verified){
     myPicUrl=picUrl;
     myVerified = verified;
@@ -734,8 +767,15 @@ function showLoggedIn(username,picUrl,verified){
     qs('profilePic').src=picUrl;
     qs('topAvatar').src=picUrl;
     qs('topName').textContent=username;
-    qs('welcomeVerifiedBadge').classList.toggle('hidden', !verified);
-    qs('topVerifiedBadge').classList.toggle('hidden', !verified);
+    const welcomeBadge = qs('welcomeVerifiedBadge');
+    const topBadge = qs('topVerifiedBadge');
+    if(verified) {
+        welcomeBadge.classList.remove('hidden');
+        topBadge.classList.remove('hidden');
+    } else {
+        welcomeBadge.classList.add('hidden');
+        topBadge.classList.add('hidden');
+    }
     qs('authBtns').classList.add('hidden');
     qs('userDisplay').classList.remove('hidden');
     qs('signupPanel').classList.add('hidden');
@@ -743,6 +783,7 @@ function showLoggedIn(username,picUrl,verified){
     qs('authMain').style.display='block';
     qs('authWrap').style.display='flex';
     qs('app').style.display='none';
+    adjustWelcomeText();
 }
 function showLoggedOut(){
     qs('authBtns').classList.remove('hidden');
@@ -849,7 +890,6 @@ function startCamRecovery(){
     }
     camIsRecovering=true;
     const delay=CAM_RECOVERY_INTERVALS[Math.min(camRecoveryAttempts,CAM_RECOVERY_INTERVALS.length-1)];
-    console.log(`[camRecovery] attempt ${camRecoveryAttempts+1} in ${delay}ms`);
     camRecoveryTimer=setTimeout(async()=>{
         camRecoveryTimer=null;
         camIsRecovering=false;
@@ -869,7 +909,6 @@ function startCamRecovery(){
             if(participants[myPeerId]){participants[myPeerId].hasVideo=true;participants[myPeerId].stream=localStream;}
             camRecoveryAttempts=0;
             updateTile(myPeerId); updateCtrlBtns();
-            console.log('[camRecovery] Camera restored');
             _broadcastCamStatus(true);
         }catch(e){
             console.warn('[camRecovery] attempt failed:',e.message);
@@ -1096,6 +1135,30 @@ function cleanupAudioElement(peerId){
         delete audioElements[peerId];
     }
     delete tileStreamMap[peerId];
+}
+
+// ─────────────────────────────────────────────
+// AVATAR OVERLAY HELPER (with verified badge)
+// ─────────────────────────────────────────────
+function createAvatarOverlay(p, isMe) {
+    const ov = document.createElement('div');
+    ov.className = 'av-overlay';
+    const img = document.createElement('img');
+    img.src = isMe ? myPicUrl : (p.pic || PICS[0]);
+    img.onerror = () => img.src = PICS[0];
+    ov.appendChild(img);
+    const nameRow = document.createElement('div');
+    nameRow.className = 'av-name-row';
+    const nm = document.createElement('span');
+    nm.textContent = p.name + (isMe ? ' (you)' : '');
+    nameRow.appendChild(nm);
+    if (p.verified) {
+        const badge = document.createElement('span');
+        badge.className = 'verified-badge';
+        nameRow.appendChild(badge);
+    }
+    ov.appendChild(nameRow);
+    return ov;
 }
 
 // ─────────────────────────────────────────────
@@ -1539,13 +1602,8 @@ function buildMedia(id,p,isMe){
         if(!isMe&&stream) ensureAudioPlaying(stream,id);
         return vid;
     } else {
-        const ov=document.createElement('div'); ov.className='av-overlay';
-        const img=document.createElement('img');
-        img.src=isMe?myPicUrl:(p.pic||PICS[0]);
-        img.onerror=()=>img.src=PICS[0];
-        const nm=document.createElement('span');
-        nm.textContent=p.name+(isMe?' (you)':'');
-        ov.append(img,nm);
+        // use helper to include verified badge
+        const ov = createAvatarOverlay(p, isMe);
         if(!isMe&&p.stream) ensureAudioPlaying(p.stream,id);
         return ov;
     }
@@ -1624,21 +1682,10 @@ function updateTileContent(tile,id,p,isMe,isSharing){
         if(!isMe&&stream) ensureAudioPlaying(stream,id);
     } else {
         if(existingVid){existingVid.remove();delete tileStreamMap[id];}
-        if(!existingOv){
-            const ov=document.createElement('div'); ov.className='av-overlay';
-            const img=document.createElement('img');
-            img.src=isMe?myPicUrl:(p.pic||PICS[0]);
-            img.onerror=()=>img.src=PICS[0];
-            const nm=document.createElement('span');
-            nm.textContent=p.name+(isMe?' (you)':'');
-            ov.append(img,nm);
-            tile.insertBefore(ov,tile.firstChild);
-        } else {
-            const img=existingOv.querySelector('img');
-            const nm=existingOv.querySelector('span');
-            if(img) img.src=isMe?myPicUrl:(p.pic||PICS[0]);
-            if(nm) nm.textContent=p.name+(isMe?' (you)':'');
-        }
+        // Build fresh overlay with verified badge
+        if(existingOv) existingOv.remove();
+        const ov = createAvatarOverlay(p, isMe);
+        tile.insertBefore(ov, tile.firstChild);
         if(!isMe&&p.stream) ensureAudioPlaying(p.stream,id);
     }
 
@@ -1703,6 +1750,8 @@ window.addEventListener('resize',()=>{
     if(qs('app').style.display!=='none'){
         const n=Object.keys(participants).length;
         applyGridLayout(qs('videoGrid'),n);
+    } else if (!qs('userDisplay').classList.contains('hidden')) {
+        adjustWelcomeText();
     }
 });
 
